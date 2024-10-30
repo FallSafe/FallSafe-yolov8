@@ -14,14 +14,13 @@
 
 ### Prerequisites
 
-- **Python**: Version 3.10.x
-- **Anaconda**: For environment management
+- **Python**: Latest version
 - **NVIDIA GPU** (Optional but highly recommended): For accelerated processing
 
 ### Setup and Installation
 
-1. **Install Python 3.10.x**
-   - Download and install from [Python's official website](https://www.python.org/).
+1. **Install Python**
+   - Download and install from [Python's official website](https://www.python.org/downloads/).
 
 2. **Set Up YOLOv8 Project**
    ```bash
@@ -29,27 +28,37 @@
    cd YOLO_PROJECT/yolov8-python
    ```
 
-3. **Install Anaconda**
-   - Download and install from [Anaconda's official website](https://www.anaconda.com/).
+3. **Create a Virtual Environment**
+
+   - **Using venv**:
+     ```bash
+     python -m venv env
+     ```
+     Activate the virtual environment:
+     - On Windows:
+       ```bash
+       .\env\Scripts\activate
+       ```
+     - On macOS/Linux:
+       ```bash
+       source env/bin/activate
+       ```
+
+   - **Using conda**: For detailed instructions on creating a conda environment, refer to the [Official Anaconda Documentation](https://docs.anaconda.com/anaconda/install/).
 
 4. **Install GPU Drivers and CUDA**
    - Install NVIDIA GPU drivers.
-   - Install CUDA (Version 12.1.0) from [NVIDIA](https://developer.nvidia.com/cuda-toolkit).
-   - Install CuDNN (Version 9.2.1) from [NVIDIA](https://developer.nvidia.com/cudnn).
-   - Verify CUDA installation
+   - Verify CUDA installation.
 
-5. **Set Up Conda Environment**
+5. **Install Required Packages**
    ```bash
-   conda create -p yolov8-gpu-env python=3.10
-   conda activate yolov8-gpu-env
    pip install -r requirements.txt
-   pip install torch torchvision torchaudio --extra-index-url https://download.pytorch.org/whl/cu117 --timeout=1000
-   pip install ultralytics
+   pip install torch torchvision torchaudio --index-url https://download.pytorch.org/whl/cu124
    ```
 
 ### Running the System
 
-1. **Test YOLOv8 Inference by downloading the models from ultralytics**
+1. **Test YOLOv8 Inference by downloading the models from Ultralytics**
    ```bash
    python detection.py --model yolov8n.onnx --source data/images/horses.jpg
    python detection.py --model yolov8n.onnx --source data/videos/road.mp4
@@ -59,17 +68,17 @@
 2. **Get Labelled Dataset from Roboflow**
    - Upload images to Roboflow and label them as either `fall` or `nofall`.
    - Discard any images that are not relevant by marking them as null.
-   - Download the structured dataset from Roboflow.
+   - Download the structured dataset from Roboflow and select YOLO for model type when prompted.
 
-3. **Organize the dataset using Organize.py**
-   - Edit Organize.py according to the dataset path.
+3. **Organize the Dataset Using Organize.py**
+   - Edit `Organize.py` according to the dataset path.
    - Organize the dataset by:
      ```bash
      python Organize.py
      ```
 
 4. **Dataset Structure**
-   - Dataset Structure will become as follows:
+   - The dataset structure will look like this after oranizing the dataset:
      ```
      dataset
       ├── train
@@ -96,11 +105,16 @@
      ```
 
 5. **Train the Model**
+
+   - Modify the name for the current operation.
+   - Adjust the parameters value to properly utilize the GPU.
+
    ```bash
    yolo classify train model=yolov8l-cls.pt data="path/to/dataset" imgsz=224 device=0 workers=2 batch=16 epochs=100 patience=50 name=yolov8_fallsafe_classification
    ```
 
-6. **Continue Training**
+6. **Continue Training after Pause OR Further Train model with new/updated Dataset**
+   
    ```bash
    yolo classify train model=runs/classify/yolov8_fallsafe_classification/weights/last.pt resume=True
    ```
