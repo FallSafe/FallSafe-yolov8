@@ -3,9 +3,8 @@ import os
 from email.mime.text import MIMEText
 from email.mime.multipart import MIMEMultipart
 from dotenv import load_dotenv
-
 load_dotenv()
-# Create a message
+
 subject = 'Fall Detected'
 body = 'Fall Detected!! Ceck your app for more details'
 
@@ -15,10 +14,9 @@ msg['To'] = os.environ.get('RECIEVER_EMAIL')
 msg['Subject'] = subject
 msg.attach(MIMEText(body, 'plain'))
 
-# Send the email
 try:
     server = smtplib.SMTP(os.environ.get('SMTP_SERVER'), os.environ.get('SMTP_PORT'))
-    server.starttls()  # Upgrade the connection to a secure encrypted SSL/TLS connection
+    server.starttls()
     server.login(os.environ.get('SENDER_EMAIL'), os.environ.get('SENDER_PASSWORD'))
     server.send_message(msg)
     print('Email sent successfully!')

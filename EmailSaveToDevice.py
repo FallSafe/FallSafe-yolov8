@@ -1,6 +1,6 @@
 import os
 import hashlib
-from imbox import Imbox  # pip install imbox
+from imbox import Imbox
 from datetime import datetime
 import traceback
 from dotenv import load_dotenv
@@ -20,7 +20,7 @@ sender_email = os.getenv('SENDER_EMAIL')
 if not os.path.isdir(download_folder):
     os.makedirs(download_folder, exist_ok=True)
 
-# Function to check if a file with the same hash exists
+# Function to check if a file exists
 def is_duplicate(file_path, content):
     if os.path.exists(file_path):
         with open(file_path, "rb") as existing_file:
@@ -38,9 +38,9 @@ try:
         duplicate_folder_count = 0
         message_count = 0
 
-        # Fetch messages one by one from the specified sender
+        # Fetching messages one by one from the specified sender
         for (uid, message) in mail.messages(sent_from=sender_email):
-            # Stop fetching if there are 3 consecutive duplicate folders
+            # Stop fetching if the consecutive duplicate folders threshold is hit
             if duplicate_folder_count >= duplicate_threshold:
                 print("Exiting due to ",duplicate_threshold, "consecutive duplicate folders.")
                 break
@@ -50,7 +50,6 @@ try:
             mail.mark_seen(uid)  # Mark the message as read
             email_date = message.date
             if isinstance(email_date, str):
-                # Remove timezone abbreviation in parentheses (e.g., "(PDT)")
                 email_date = re.sub(r"\s+\(.*?\)", "", email_date)
                 try:
                     email_date = datetime.strptime(email_date, '%a, %d %b %Y %H:%M:%S %z')
