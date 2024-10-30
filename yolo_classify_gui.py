@@ -15,7 +15,7 @@ from dotenv import load_dotenv
 
 load_dotenv()
 
-# Initialize global variables
+
 output_file_path = "classification_output.txt"
 fall_count = 0
 total_frames = 0
@@ -39,23 +39,23 @@ def run_yolo_command():
             if not is_processing:
                 break
             output_file.write(line)
-            print(f"Debug: Raw output: {line.strip()}")  # Debug print
-            update_gui(f"Debug: Raw output: {line.strip()}")  # Debug GUI update
+            print(f"Debug: Raw output: {line.strip()}")
+            update_gui(f"Debug: Raw output: {line.strip()}")
 
             score_match = re.search(r'(\w+)\s+([\d.]+)', line)
             if score_match:
                 label, score = score_match.groups()
                 score = float(score)
-                print(f"Debug: Matched - Label: {label}, Score: {score}")  # Debug print
-                update_gui(f"Debug: Matched - Label: {label}, Score: {score}")  # Debug GUI update
+                print(f"Debug: Matched - Label: {label}, Score: {score}")  
+                update_gui(f"Debug: Matched - Label: {label}, Score: {score}")  
 
-                if label == 'fall' and score > 0.5:  # Adjust threshold as needed
+                if label == 'fall' and score > 0.5:  # Threshold
                     current_label = 'fall'
                 else:
                     current_label = 'nofall'
 
-                print(f"Debug: Current label: {current_label}")  # Debug print
-                update_gui(f"Debug: Current label: {current_label}")  # Debug GUI update
+                print(f"Debug: Current label: {current_label}")  
+                update_gui(f"Debug: Current label: {current_label}")  
                 root.after(0, update_gui, f"Status: {current_label}, Score: {score:.2f}")
                 root.after(0, update_fall_status, current_label)
                 last_label = current_label
@@ -69,7 +69,6 @@ def run_yolo_command():
 def update_gui(text):
     output_text.insert(tk.END, text + "\n")
     output_text.see(tk.END)
-    # Force update of the GUI
     root.update_idletasks()
 
 def update_fall_status(label):
@@ -80,7 +79,7 @@ def update_fall_status(label):
     if label == "fall":
         fall_count += 1
         fall_status_label.config(text="Fall Detected!", fg="red")
-        send_message()  # Send email immediately when fall is detected
+        send_message()  # Sending email when fall is detected
     else:
         fall_status_label.config(text="No Fall Detected", fg="green")
 
@@ -167,16 +166,13 @@ def on_closing():
     cap.release()
     root.destroy()
 
-# Create the main window
 root = tk.Tk()
 root.title("Fall Detection System")
 root.geometry("1000x800")
 
-# Create and pack the video label
 video_label = ttk.Label(root)
 video_label.pack(padx=10, pady=10)
 
-# Email entry
 receiver_email_label = ttk.Label(root, text="Recipient Email:")
 receiver_email_label.pack(pady=5)
 
@@ -202,17 +198,14 @@ start_button.pack(pady=10)
 stop_button = tk.Button(root, text="Stop Processing", command=stop_processing, state=tk.DISABLED)
 stop_button.pack(pady=10)
 
-# Initialize the camera
+# Initialize camera
 cap = cv2.VideoCapture(1)
 if not cap.isOpened():
     print("Error: Could not open camera")
     output_text.insert(tk.END, "Error: Could not open camera\n")
 
-# Start updating the video
 update_video()
 
-# Handle window close event
 root.protocol("WM_DELETE_WINDOW", on_closing)
 
-# Start the GUI event loop
 root.mainloop()

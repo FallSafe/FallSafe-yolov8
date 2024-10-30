@@ -30,7 +30,7 @@ def move_images(subset_path):
             class_id = int(lines[0].strip().split()[0])
             class_name = classes[class_id]
 
-            image_file = label_file.replace('.txt', '.jpg')  # Assuming images are .jpg
+            image_file = label_file.replace('.txt', '.jpg')
             image_path = os.path.join(images_path, image_file)
             if os.path.exists(image_path):
                 dst_path = os.path.join(subset_path, class_name, image_file)

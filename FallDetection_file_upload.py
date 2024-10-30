@@ -15,12 +15,8 @@ import glob
 import sys
 import io
 from dotenv import load_dotenv
-
 load_dotenv()
 
-
-
-# Global variables
 output_file_path = "output/classification_output.txt"
 frame_output_file = "output/frame_output.json"
 CONFIDENCE_THRESHOLD = 0.5
@@ -36,10 +32,9 @@ class FallDetectionApp:
         self.isVideo = True
         self.save_dir = "output"
         self.filename = "junk"
-        self.fall_buffer = []  # Buffer to hold the last 20 frame results
-        self.fall_detected = False  # State variable to track if a fall has been detected
+        self.fall_buffer = []
+        self.fall_detected = False 
 
-        # GUI setup
         self.setup_gui()
 
     def setup_gui(self):
@@ -120,7 +115,7 @@ class FallDetectionApp:
     def update_gui(self, message):
         """Update the GUI text area with the given message."""
         self.output_text.insert(tk.END, message + '\n')
-        self.output_text.see(tk.END)  # Scroll to the end
+        self.output_text.see(tk.END)
 
     def start_processing(self):
         """Start processing the selected file in a separate thread."""
@@ -138,15 +133,12 @@ class FallDetectionApp:
         
         self.fall_status_label.config(text="Processing.....", style="Processing.TLabel")
         self.start_button.config(state=tk.DISABLED)
-        self.update_gui("Processing started...")  # Indicate that processing has started
+        self.update_gui("Processing started...")
 
         self.filename = self.get_filename()
         if threading.Thread(target=self.run_yolo_command).start():
             self.fall_status_label.config(text="Processing Completed", style="Processing.TLabel")
-            self.root.after(2000, self.root.destroy)  # Close the window after 2 seconds
-
-
-    # Optimized run_yolo_command method within FallDetectionApp class
+            self.root.after(2000, self.root.destroy)
 
     def run_yolo_command(self):
         """Run the YOLO command to process the selected file, optimized for faster execution."""
@@ -164,7 +156,6 @@ class FallDetectionApp:
             self.update_gui("Error: Invalid file format for processing.")
             return False
         
-        # Create a window for displaying frames
         cv2.namedWindow("Frame", cv2.WINDOW_NORMAL)
 
         # Start the subprocess and handle output
@@ -174,20 +165,16 @@ class FallDetectionApp:
             self.update_gui(f"Error running YOLO command: {e}")
             return False
 
-        # Capture the output, process YOLO predictions, and optimize output capture
         sys.stdout = io.TextIOWrapper(sys.stdout.buffer, encoding='utf-8')
         with open(output_file_path, "w", encoding='utf-8') as output_file:
             for line in process.stdout:
                 output_file.write(line)
                 self.update_gui(line.strip())
                 self.process_yolo_output(line)
-        sys.stdout = sys.__stdout__  # Reset stdout
+        sys.stdout = sys.__stdout__ 
 
-        # Finalize JSON output and GUI updates
         self.write_frame_data()
         self.update_gui("Processing completed.")
-        
-        # Close the window after processing is done
         cv2.destroyAllWindows()
         
         return True
@@ -200,28 +187,23 @@ class FallDetectionApp:
     def process_yolo_output(self, line):
         """Extract labels and frame data from the YOLO output."""
 
-        if self.total_frames % 3 != 0:  # Skip two frames, process one
+        if self.total_frames % 3 != 0:  # Skipping frames and processing
             self.total_frames += 1
             return
 
-
-        # Updated regex to match both image and video output formats
         score_match = re.search(r'(image|video) \d+/\d+ \(frame \d+/\d+\) .+?: \d+x\d+ (fall|nofall) (\d+\.\d+), (fall|nofall) (\d+\.\d+)', line)
 
         if score_match:
-            # Extract scores for 'fall' and 'nofall'
-            primary_label = score_match.group(2)  # 'fall' or 'nofall'
-            primary_score = float(score_match.group(3))  # primary score
+            primary_label = score_match.group(2)
+            primary_score = float(score_match.group(3))
 
-            # Update frame data for JSON output
             frame_info = {
                 "frame_number": self.total_frames,
                 "label": primary_label,
                 "score": primary_score
             }
-            self.frame_data.append(frame_info)  # Append frame data to the list
+            self.frame_data.append(frame_info)
 
-            # Add the current label to the fall buffer
             self.fall_buffer.append(primary_label)
             if len(self.fall_buffer) > 20:  # Keep only the last 20 frames
                 self.fall_buffer.pop(0)
@@ -230,27 +212,25 @@ class FallDetectionApp:
             fall_count = self.fall_buffer.count('fall')
             label = 'fall' if fall_count >= 12 else 'nofall'
 
-            # Check and update fall status
             self.update_fall_status(label)
 
             # Send email notification if a fall is detected and not already sent
             if label == 'fall' and not self.fall_detected:
-                print("Fall detected, sending email...")  # Debug statement
+                print("Fall detected, sending email...")
                 self.send_email_notification()
-                self.fall_detected = True  # Set the state to indicate a fall has been detected
+                self.fall_detected = True
 
             # Reset the fall detected state if no fall is detected
             if label == 'nofall':
-                self.fall_detected = False  # Reset the state when no fall is detected
+                self.fall_detected = False
 
-            # Increment total frames
             self.total_frames += 1
 
-            # Display the current frame
-            self.display_frame(self.total_frames)  # Ensure the frame is displayed here
+            # Displaying the current frame
+            self.display_frame(self.total_frames)
 
         else:
-            print(f"Error: Unable to match line format: {line}")  # Debug statement for unmatched lines
+            print(f"Error: Unable to match line format: {line}")
         
 
     def update_fall_status(self, current_label):
@@ -271,7 +251,7 @@ class FallDetectionApp:
             cap.set(cv2.CAP_PROP_POS_FRAMES, frame_number)
             ret, frame = cap.read()
             if ret:
-                cv2.resizeWindow("Frame", frame.shape[1], frame.shape[0])  # Resize the window to match the frame size
+                cv2.resizeWindow("Frame", frame.shape[1], frame.shape[0])
                 cv2.imshow("Frame", frame)  # Display the frame
                 if cv2.waitKey(1) & 0xFF == ord('q'):  # Wait for a key press, exit if 'q' is pressed
                     cv2.destroyAllWindows()
@@ -280,10 +260,7 @@ class FallDetectionApp:
     def send_email_notification(self):
         """Send an email notification when a fall is detected."""
 
-        # Ensure the output directory exists
         output_dir = os.path.join(self.save_dir, "output")
-        
-        # Define paths for the original and converted videos
         original_video_path = os.path.join(output_dir, f"{self.filename}.avi")
         new_video_path = os.path.join(output_dir, f"{self.filename}.mp4")
         if os.path.exists(original_video_path):     
@@ -311,18 +288,16 @@ class FallDetectionApp:
                 for root, dirs, files in os.walk(f'{self.save_dir}/output'):
                     for file in files:
                         file_path = os.path.join(root, file)
-                        attachment = open(file_path, "rb")  # Open the image for reading
+                        attachment = open(file_path, "rb")
                         part = MIMEBase('application', 'octet-stream')
-                        part.set_payload(attachment.read())  # Read the file content
-                        encoders.encode_base64(part)  # Encode the file
-                        part.add_header('Content-Disposition', f'attachment; filename={file}')  # Add header for attachment
-                        msg.attach(part)  # Attach the part to the email
-                        print(f"Added file: {file_path}")  # Debug statement
-                print("Attached files")  # Debug statement
-                attachment.close()  # Close the file after attaching
+                        part.set_payload(attachment.read())
+                        encoders.encode_base64(part)
+                        part.add_header('Content-Disposition', f'attachment; filename={file}')
+                        msg.attach(part)
+                attachment.close()
             except Exception as e:
-                self.update_gui(f"Error attaching image: {e}")  # Error handling for attachment
-                return  # Exit if there's an error attaching the image
+                self.update_gui(f"Error attaching image: {e}")
+                return
 
         try:
             # Set up the SMTP server and send the email
@@ -348,7 +323,6 @@ class FallDetectionApp:
         except Exception as e:
             self.update_gui(f"Error sending email: {e}")  # Error handling for other exceptions
 
-# Create and run the application
 if __name__ == "__main__":
     root = tk.Tk()
     app = FallDetectionApp(root)
