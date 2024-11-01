@@ -1,211 +1,203 @@
-import smtplib
+import cv2
 import os
-from email.mime.text import MIMEText
+import smtplib
+import numpy as np
+import subprocess
+import threading
+from tkinter import *
+from PIL import Image, ImageTk
 from email.mime.multipart import MIMEMultipart
+from email.mime.text import MIMEText
 from email.mime.base import MIMEBase
 from email import encoders
-import subprocess
-import tkinter as tk
-from tkinter import ttk
-import threading
-import re
-import cv2
-from PIL import Image, ImageTk
-from dotenv import load_dotenv
+from queue import Queue
 
-load_dotenv()
+# Define constants
+OUTPUT_FILE_PATH = "fall_detection_report.txt"
+CONFIDENCE_THRESHOLD = 0.5  # Confidence threshold for YOLO
+MODEL_PATH = "model/model.pt"
+MAX_WORKERS = 4  # Number of threads for YOLO processing
+FALL_DETECTION_FRAMES = 1  # Number of consecutive frames with a fall to trigger email
 
+class FallDetectionApp:
+    def __init__(self, root):
+        self.root = root
+        self.save_dir = "output"
+        self.running = False
+        self.source = 0
+        self.queue = Queue()
+        self.fall_frame_count = 0  # Count of consecutive fall frames
+        self.email_sent = False  # Flag to prevent multiple emails
+        self.setup_gui()
 
-output_file_path = "classification_output.txt"
-fall_count = 0
-total_frames = 0
-last_label = "nofall"
-is_processing = False
+    def setup_gui(self):
+        self.root.title("Fall Detection System")
+        video_frame = Frame(self.root)
+        video_frame.pack(pady=10)
+        
+        self.video_label = Label(video_frame, width=640, height=480)
+        self.video_label.pack()
+        self.set_empty_frame()
 
-def run_yolo_command():
-    global is_processing, fall_count, total_frames, last_label
-    modelPath = "model\\model.pt"
-    command = f"yolo classify predict model={modelPath} source=1 save=False"
-    
-    try:
-        process = subprocess.Popen(command, stdout=subprocess.PIPE, stderr=subprocess.STDOUT, universal_newlines=True, shell=True)
-    except Exception as e:
-        update_gui(f"Error running YOLO command: {e}")
-        is_processing = False
-        return
+        status_frame = Frame(self.root)
+        status_frame.pack(pady=10)
+        self.fall_status_label = Label(status_frame, text="Waiting for detection...", fg="yellow", font=("Helvetica", 14))
+        self.fall_status_label.pack()
 
-    with open(output_file_path, "w") as output_file:
-        for line in process.stdout:
-            if not is_processing:
+        email_frame = Frame(self.root)
+        email_frame.pack(pady=10)
+        Label(email_frame, text="Recipient Email:").pack(side=LEFT)
+        self.receiver_email = Entry(email_frame, width=30)
+        self.receiver_email.pack(side=LEFT)
+        self.receiver_email.insert(0, "")
+
+        button_frame = Frame(self.root)
+        button_frame.pack(pady=10)
+        start_button = Button(button_frame, text="Start Processing", command=self.start_processing)
+        start_button.pack(side=LEFT, padx=5)
+        stop_button = Button(button_frame, text="Stop Processing", command=self.stop_processing)
+        stop_button.pack(side=LEFT, padx=5)
+
+        self.notification_label = Label(self.root, text="", fg="green")
+        self.notification_label.pack(pady=10)
+
+    def set_empty_frame(self):
+        blank_image = np.zeros((480, 640, 3), dtype=np.uint8)
+        imgtk = self.convert_frame_to_image(blank_image)
+        self.video_label.imgtk = imgtk
+        self.video_label.configure(image=imgtk)
+
+    def clear_output_dir(self):
+        for root_dir, dirs, files in os.walk(self.save_dir):
+            for dir_name in dirs:
+                os.rmdir(os.path.join(root_dir, dir_name))
+            for file_name in files:
+                os.remove(os.path.join(root_dir, file_name))
+
+    def run_yolo_command(self):
+        self.clear_output_dir()
+        command = f"yolo classify predict model={MODEL_PATH} source={self.source} conf={CONFIDENCE_THRESHOLD} save=False project={self.save_dir} name={self.save_dir} device=0 workers={MAX_WORKERS} batch=32 half=True"
+
+        try:
+            process = subprocess.Popen(command, stdout=subprocess.PIPE, stderr=subprocess.STDOUT, shell=True, encoding='utf-8')
+            with open(OUTPUT_FILE_PATH, "w", encoding='utf-8') as output_file:
+                for line in process.stdout:
+                    output_file.write(line)
+                    self.update_gui(line.strip())
+                    self.process_yolo_output(line)
+            self.update_gui("Processing completed.")
+        except Exception as e:
+            self.update_gui(f"Error running YOLO command: {e}", fg="red")
+
+    def process_video(self, video_source=0):
+        cap = cv2.VideoCapture(video_source)
+        frame_count = 0
+
+        while self.running:
+            ret, frame = cap.read()
+            if not ret:
                 break
-            output_file.write(line)
-            print(f"Debug: Raw output: {line.strip()}")
-            update_gui(f"Debug: Raw output: {line.strip()}")
 
-            score_match = re.search(r'(\w+)\s+([\d.]+)', line)
-            if score_match:
-                label, score = score_match.groups()
-                score = float(score)
-                print(f"Debug: Matched - Label: {label}, Score: {score}")  
-                update_gui(f"Debug: Matched - Label: {label}, Score: {score}")  
+            frame_count += 1
+            fall_detected = self.detect_fall(frame)
+            self.queue.put((fall_detected, frame, frame_count))
 
-                if label == 'fall' and score > 0.5:  # Threshold
-                    current_label = 'fall'
+            imgtk = self.convert_frame_to_image(frame)
+            self.video_label.imgtk = imgtk
+            self.video_label.configure(image=imgtk)
+
+            if cv2.waitKey(1) & 0xFF == ord('q'):
+                break
+
+        cap.release()
+        self.set_empty_frame()
+
+    def start_processing(self):
+        self.running = True
+        self.email_sent = False
+        self.fall_frame_count = 0
+        threading.Thread(target=self.process_video).start()
+        threading.Thread(target=self.update_fall_status).start()
+
+    def stop_processing(self):
+        self.running = False
+        self.update_gui("Processing stopped", fg="orange")
+        self.set_empty_frame()
+
+    def send_message(self):
+        threading.Thread(target=self._send_email_thread).start()
+
+    def _send_email_thread(self):
+        subject = 'Fall Detected'
+        body = 'Fall Detected! Check the output file for more details.'
+
+        msg = MIMEMultipart()
+        msg['From'] = os.environ.get('SENDER_EMAIL')
+        msg['To'] = self.receiver_email.get()
+        msg['Subject'] = subject
+        msg.attach(MIMEText(body, 'plain'))
+
+        self.attach_file(msg, OUTPUT_FILE_PATH)
+
+        try:
+            smtp_server = os.environ.get('SMTP_SERVER')
+            port = int(os.environ.get('SMTP_PORT', 587))
+            with smtplib.SMTP(smtp_server, port) as server:
+                server.starttls()
+                server.login(os.environ['SENDER_EMAIL'], os.environ['SENDER_PASSWORD'])
+                server.send_message(msg)
+                self.update_gui('Email sent successfully!', fg='green')
+        except Exception as e:
+            self.update_gui(f'Error sending email: {e}', fg='red')
+
+    def attach_file(self, msg, file_path):
+        if os.path.exists(file_path):
+            with open(file_path, "rb") as file:
+                part = MIMEBase('application', 'octet-stream')
+                part.set_payload(file.read())
+                encoders.encode_base64(part)
+                part.add_header('Content-Disposition', f'attachment; filename={os.path.basename(file_path)}')
+                msg.attach(part)
+
+    def update_fall_status(self):
+        while self.running or not self.queue.empty():
+            try:
+                fall_detected, frame, frame_count = self.queue.get(timeout=0.1)
+                if fall_detected:
+                    self.fall_frame_count += 1
+                    self.save_fall_frame(frame, frame_count)
+                    self.fall_status_label.config(text="Fall Detected", fg="red")
+                    # Trigger email if fall is detected for 20 consecutive frames
+                    if self.fall_frame_count >= FALL_DETECTION_FRAMES and not self.email_sent:
+                        self.send_message()
+                        self.email_sent = True
                 else:
-                    current_label = 'nofall'
+                    self.fall_frame_count = 0
+                    self.fall_status_label.config(text="No Fall Detected", fg="green")
+            except:
+                pass
 
-                print(f"Debug: Current label: {current_label}")  
-                update_gui(f"Debug: Current label: {current_label}")  
-                root.after(0, update_gui, f"Status: {current_label}, Score: {score:.2f}")
-                root.after(0, update_fall_status, current_label)
-                last_label = current_label
+    def convert_frame_to_image(self, frame):
+        frame_rgb = cv2.cvtColor(frame, cv2.COLOR_BGR2RGB)
+        return ImageTk.PhotoImage(image=Image.fromarray(frame_rgb))
 
-            if "Sending email notification" in line or "Email sent successfully!" in line:
-                root.after(0, update_gui, line.strip())
+    def save_fall_frame(self, frame, frame_count):
+        folder_path = self.save_dir
+        os.makedirs(folder_path, exist_ok=True)
+        frame_filename = os.path.join(folder_path, f"fall_frame_{frame_count}.jpg")
+        cv2.imwrite(frame_filename, frame)
+        self.update_gui(f"Saved frame: {frame_filename}")
 
-    is_processing = False
-    root.after(0, final_status_update)
+    def update_gui(self, message, fg="green"):
+        self.notification_label.config(text=message, fg=fg)
 
-def update_gui(text):
-    output_text.insert(tk.END, text + "\n")
-    output_text.see(tk.END)
-    root.update_idletasks()
+    def process_yolo_output(self, line):
+        pass
 
-def update_fall_status(label):
-    global fall_count, total_frames, last_label
-    total_frames += 1
-    last_label = label
+    def detect_fall(self, frame):
+        return False
 
-    if label == "fall":
-        fall_count += 1
-        fall_status_label.config(text="Fall Detected!", fg="red")
-        send_message()  # Sending email when fall is detected
-    else:
-        fall_status_label.config(text="No Fall Detected", fg="green")
-
-def final_status_update():
-    if last_label == "fall":
-        fall_status_label.config(text="Fall Detected!", fg="red")
-    else:
-        fall_status_label.config(text="No Fall Detected", fg="green")
-    start_button.config(state=tk.NORMAL)
-    stop_button.config(state=tk.DISABLED)
-
-def send_message():
-    subject = 'Fall Detected'
-    body = 'Fall Detected!! Check the output file for more details.'
-
-    msg = MIMEMultipart()
-    msg['From'] = os.environ.get('SENDER_EMAIL', 'your_email@example.com')
-    msg['To'] = receiver_email.get()
-    msg['Subject'] = subject
-    msg.attach(MIMEText(body, 'plain'))
-
-    attach_file(msg, output_file_path)
-
-    try:
-        smtp_server = os.environ.get('SMTP_SERVER', 'smtp.gmail.com')
-        port = int(os.environ.get('PORT', 587))
-        with smtplib.SMTP(smtp_server, port) as server:
-            server.starttls()
-            server.login(os.environ['SENDER_EMAIL'], os.environ['PASSWORD'])
-            server.send_message(msg)
-            print('Email sent successfully!')
-            notification_label.config(text='Email sent successfully!', fg='green')
-    except Exception as e:
-        print(f'Error occurred while sending email: {e}')
-        notification_label.config(text='Error sending email', fg='red')
-
-def attach_file(msg, file_path):
-    if os.path.exists(file_path):
-        with open(file_path, "rb") as file:
-            part = MIMEBase('application', 'octet-stream')
-            part.set_payload(file.read())
-            encoders.encode_base64(part)
-            part.add_header('Content-Disposition', f'attachment; filename={os.path.basename(file_path)}')
-            msg.attach(part)
-
-def validate_email(email):
-    email_regex = r'^[a-zA-Z0-9_.+-]+@[a-zA-Z0-9-]+\.[a-zA-Z0-9-.]+$'
-    return re.match(email_regex, email) is not None
-
-def start_processing():
-    global is_processing, fall_count, total_frames
-    if not is_processing:
-        email = receiver_email.get()
-        if not email or not validate_email(email):
-            update_gui("Error: Please enter a valid recipient email before starting processing.")
-            return
-        
-        is_processing = True
-        start_button.config(state=tk.DISABLED)
-        stop_button.config(state=tk.NORMAL)
-        
-        fall_count = 0
-        total_frames = 0
-        
-        threading.Thread(target=run_yolo_command, daemon=True).start()
-
-def stop_processing():
-    global is_processing
-    is_processing = False
-    start_button.config(state=tk.NORMAL)
-    stop_button.config(state=tk.DISABLED)
-
-def update_video():
-    ret, frame = cap.read()
-    if ret:
-        frame = cv2.flip(frame, 1)
-        frame = cv2.cvtColor(frame, cv2.COLOR_BGR2RGB)
-        photo = ImageTk.PhotoImage(image=Image.fromarray(frame))
-        video_label.config(image=photo)
-        video_label.image = photo
-    root.after(10, update_video)
-
-def on_closing():
-    cap.release()
-    root.destroy()
-
-root = tk.Tk()
-root.title("Fall Detection System")
-root.geometry("1000x800")
-
-video_label = ttk.Label(root)
-video_label.pack(padx=10, pady=10)
-
-receiver_email_label = ttk.Label(root, text="Recipient Email:")
-receiver_email_label.pack(pady=5)
-
-receiver_email = ttk.Entry(root, width=30)
-receiver_email.pack(pady=5)
-
-# Create and pack the output text widget
-output_text = tk.Text(root, wrap=tk.WORD, width=70, height=10)
-output_text.pack(padx=10, pady=10)
-
-# Label to show fall detection status
-fall_status_label = ttk.Label(root, text="No Fall Detected", font=("Helvetica", 16))
-fall_status_label.pack(pady=10)
-
-# Label to show email sending status
-notification_label = ttk.Label(root, text="", font=("Helvetica", 12))
-notification_label.pack(pady=10)
-
-# Create and pack the start and stop buttons
-start_button = tk.Button(root, text="Start Processing", command=start_processing)
-start_button.pack(pady=10)
-
-stop_button = tk.Button(root, text="Stop Processing", command=stop_processing, state=tk.DISABLED)
-stop_button.pack(pady=10)
-
-# Initialize camera
-cap = cv2.VideoCapture(1)
-if not cap.isOpened():
-    print("Error: Could not open camera")
-    output_text.insert(tk.END, "Error: Could not open camera\n")
-
-update_video()
-
-root.protocol("WM_DELETE_WINDOW", on_closing)
-
+# Initialize the GUI application
+root = Tk()
+app = FallDetectionApp(root)
 root.mainloop()
