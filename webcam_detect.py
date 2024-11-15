@@ -6,7 +6,7 @@ import cv2
 model = YOLO("model/model.pt")  # pretrained YOLOv11n model
 
 # Run batched inference on a list of images
-results = model(source=0, stream=False, half=True)  # return a generator of Results objects
+result  s = model(source=0, stream=True)  # return a generator of Results objects
 
 # Process results generator
 for result in results:
