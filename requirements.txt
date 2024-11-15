@@ -1,0 +1,6 @@
+opencv-python
+opencv-contrib-python
+onnxruntime
+ultralytics
+torch
+torchvision
