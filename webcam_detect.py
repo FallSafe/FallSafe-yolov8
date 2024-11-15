@@ -3,7 +3,7 @@ import time
 import cv2
 
 # Load a model
-model = YOLO("model/model.pt")  # pretrained YOLOv11n model
+model = YOLO("model/best.pt")  # pretrained YOLOv11n model
 
 # Run batched inference on a list of images
 results = model(source=0, stream=False, half=True)  # return a generator of Results objects
