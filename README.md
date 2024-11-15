@@ -56,13 +56,13 @@
    pip install torch torchvision torchaudio --index-url https://download.pytorch.org/whl/cu124
    ```
 
-### Running the System
+### Training
 
 1. **Test YOLOv8 Inference by downloading the models from Ultralytics**
    ```bash
-   python detection.py --model yolov8n.onnx --source data/images/horses.jpg
-   python detection.py --model yolov8n.onnx --source data/videos/road.mp4
-   python detection.py --model yolov8n.onnx --source 0
+   yolo detect predict model=yolov8l.pt source="path/to/image.png"
+   yolo detect predict model=yolov8l.pt source="path/to/road.mp4"
+   yolo detect predict model=yolov8l.pt source=0
    ```
 
 2. **Get Labelled Dataset from Roboflow**
@@ -70,64 +70,32 @@
    - Discard any images that are not relevant by marking them as null.
    - Download the structured dataset from Roboflow and select YOLO for model type when prompted.
 
-3. **Organize the Dataset Using Organize.py**
-   - Edit `Organize.py` according to the dataset path.
-   - Organize the dataset by:
-     ```bash
-     python Organize.py
-     ```
-
-4. **Dataset Structure**
-   - The dataset structure will look like this after oranizing the dataset:
-     ```
-     dataset
-      ├── train
-      │   ├── fall
-      │   │   ├── image0.jpg
-      │   │   ├── image1.jpg
-      │   ├── nofall
-      │   │   ├── image0.jpg
-      │   │   ├── image1.jpg
-      ├── val
-      │   ├── fall
-      │   │   ├── image0.jpg
-      │   │   ├── image1.jpg
-      │   ├── nofall
-      │   │   ├── image0.jpg
-      │   │   ├── image1.jpg
-      ├── test
-      │   ├── fall
-      │   │   ├── image0.jpg
-      │   │   ├── image1.jpg
-      │   ├── nofall
-      │   │   ├── image0.jpg
-      │   │   ├── image1.jpg
-     ```
-
-5. **Train the Model**
+3. **Train the Model**
 
    - Modify the name for the current operation.
    - Adjust the parameters value to properly utilize the GPU.
 
    ```bash
-   yolo classify train model=yolov8l-cls.pt data="path/to/dataset" imgsz=224 device=0 workers=2 batch=16 epochs=100 patience=50 name=yolov8_fallsafe_classification
+   yolo detect train model=yolov8l.pt data="path/to/dataset" imgsz=224 device=0 workers=2 batch=16 epochs=100 patience=50 name=yolov8_fallsafe_classification
    ```
 
-6. **Continue Training after Pause OR Further Train model with new/updated Dataset**
+4. **Continue Training after Pause OR Further Train model with new/updated Dataset**
    
    ```bash
-   yolo classify train model=runs/classify/yolov8_fallsafe_classification/weights/last.pt resume=True
+   yolo detect train model=runs/detect/yolov8_fallsafe_classification/weights/last.pt resume=True
    ```
 
-7. **Perform Classification**
+### Inference
+   1. **Perform Classification**
    ```bash
-   yolo classify predict model=runs/classify/yolov8_fallsafe_classification/weights/best.pt source="inference/classify/image.jpg" save=True
+   yolo detect predict model=runs/detect/yolov8_fallsafe_classification/weights/best.pt source="path/to/image.jpg" save=True
+   yolo detect predict model=runs/detect/yolov8_fallsafe_classification/weights/best.pt source="path/to/video.mp4" save=True
    ```
 
-8. **Real-Time Classification via Camera**
-   ```bash
-   yolo detect predict model=runs/classify/yolov8_fallsafe_classification/weights/best.pt source="0" save=True conf=0.5 show=True save_txt=True line_thickness=1
-   ```
+   2. **Real-Time Classification via Camera**
+      ```bash
+      yolo detect predict model=runs/detect/yolov8_fallsafe_classification/weights/best.pt source="0" save=True conf=0.5
+      ```
 
 ## Contributing
 
