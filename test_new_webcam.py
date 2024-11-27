@@ -28,36 +28,38 @@ while True:
 
     # Process the results
     predictions = []
-    for result in results:
-        # Ensure there are detections in the result
-        if result.boxes is not None and len(result.boxes) > 0:
-            # Get the detection boxes and class information
-            boxes = result.boxes.xywh
-            confidences = result.boxes.conf
-            class_ids = result.boxes.cls
-            names = result.names
+    if results:  # Check if results are not empty
+        for result in results:
+            # Ensure there are detections in the result
+            if result.boxes is not None and len(result.boxes) > 0:
+                # Get the detection boxes and class information
+                boxes = result.boxes.xywh
+                confidences = result.boxes.conf
+                class_ids = result.boxes.cls
+                names = result.names
 
-            # Process each detection
-            for box, conf, cls in zip(boxes, confidences, class_ids):
-                if conf >= 0.2:  # Confidence threshold
-                    class_name = names[int(cls)]  # Get class name from model labels
+                # Process each detection
+                for box, conf, cls in zip(boxes, confidences, class_ids):
+                    print(f"Detected: {names[int(cls)]}, Confidence: {conf.item()}")  # Debugging line
+                    if conf >= 0.1:  # Lowered confidence threshold from 0.2 to 0.1
+                        class_name = names[int(cls)]  # Get class name from model labels
 
-                    # Create a unique detection ID
-                    detection_id = str(uuid.uuid4())
+                        # Create a unique detection ID
+                        detection_id = str(uuid.uuid4())
 
-                    # Prepare the prediction dictionary
-                    prediction = {
-                        "x": box[0].item(),
-                        "y": box[1].item(),
-                        "width": box[2].item(),
-                        "height": box[3].item(),
-                        "confidence": conf.item(),
-                        "class": class_name,
-                        "class_id": int(cls),
-                        "detection_id": detection_id
-                    }
+                        # Prepare the prediction dictionary
+                        prediction = {
+                            "x": box[0].item(),
+                            "y": box[1].item(),
+                            "width": box[2].item(),
+                            "height": box[3].item(),
+                            "confidence": conf.item(),
+                            "class": class_name,
+                            "class_id": int(cls),
+                            "detection_id": detection_id
+                        }
 
-                    predictions.append(prediction)
+                        predictions.append(prediction)
 
     # Create the final JSON structure
     output = {
