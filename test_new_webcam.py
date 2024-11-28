@@ -1,6 +1,10 @@
 import cv2
 import uuid
 import json
+import smtplib
+import os
+from email.mime.text import MIMEText
+from email.mime.multipart import MIMEMultipart
 from ultralytics import YOLO
 
 # Load the custom YOLOv8 model from 'model/model.pt' for inference
@@ -12,6 +16,35 @@ cap = cv2.VideoCapture(0)  # Change 0 to the camera source for CCTV if needed
 if not cap.isOpened():
     print("Error: Could not open video stream.")
     exit()
+
+def send_email_alert(label, confidence_score):
+    """Send an email notification when a fall is detected."""
+    try:
+        sender_email = os.getenv('SENDER_EMAIL')
+        sender_password = os.getenv('SENDER_PASSWORD')
+        recipient_email = "recipient@example.com"  # Replace with the actual recipient email
+
+        if sender_email is None or recipient_email is None:
+            raise ValueError("Sender email and recipient email must be provided.")
+
+        if sender_password is None:
+            raise ValueError("Sender password must be provided.")
+
+        subject = "Fall Detection Alert"
+        body = f"A fall was detected with a confidence score of {confidence_score:.2f}."
+        message = MIMEMultipart()
+        message["From"] = sender_email
+        message["To"] = recipient_email
+        message["Subject"] = subject
+        message.attach(MIMEText(body, "plain"))
+
+        with smtplib.SMTP_SSL("smtp.gmail.com", 465) as server:
+            server.login(sender_email, sender_password)
+            server.sendmail(sender_email, recipient_email, message.as_string())
+            print(f"Alert sent to {recipient_email}.")
+
+    except Exception as e:
+        print(f"Error sending email: {e}")
 
 while True:
     # Read frame from the camera
@@ -60,6 +93,10 @@ while True:
                         }
 
                         predictions.append(prediction)
+
+                        # Send email alert if a fall is detected
+                        if class_name == "fall":
+                            send_email_alert(class_name, conf.item())
 
     # Create the final JSON structure
     output = {
