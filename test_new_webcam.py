@@ -10,16 +10,13 @@ from ultralytics import YOLO
 from PIL import Image
 import numpy as np
 
-# Initialize the YOLO model
 model = YOLO("model/model.pt")
 
-# Open the video stream
 cap = cv2.VideoCapture(0)
 if not cap.isOpened():
     print("Error: Could not open video stream.")
     exit()
 
-# Initialize variables for fall detection frames and start time
 fall_frames = []
 fall_start_time = None
 
@@ -146,10 +143,12 @@ def main():
             fall_frames = []
             fall_start_time = None
 
-        for box in results.boxes:
-            x, y, w, h = map(int, box.xywh[0].tolist())
-            x2, y2 = x + w, y + h
-            cv2.rectangle(frame, (x, y), (x2, y2), (0, 255, 0), 2)
+        for result in results:
+            if hasattr(result, 'boxes'):
+                for box in result.boxes:
+                    x, y, w, h = map(int, box.xywh[0].tolist())
+                    x2, y2 = x + w, y + h
+                    cv2.rectangle(frame, (x, y), (x2, y2), (0, 255, 0), 2)
 
         cv2.imshow("Live Video Feed", frame)
 
