@@ -107,6 +107,9 @@ class FallDetectionApp:
     
     def get_filename(self):
         """Extract filename without extension from the selected file path."""
+        if self.selected_file is None:
+            return None  # or raise ValueError("No file selected.")
+
         match = re.search(r".*[\\/](.+)\.[^.]+$", self.selected_file)
         return match.group(1) if match else None
 
@@ -182,10 +185,12 @@ class FallDetectionApp:
 
         sys.stdout = io.TextIOWrapper(sys.stdout.buffer, encoding='utf-8')
         with open(output_file_path, "w", encoding='utf-8') as output_file:
-            for line in process.stdout:
-                output_file.write(line)
-                self.update_gui(line.strip())
-                self.process_yolo_output(line)
+            if process.stdout is not None:  # Check if stdout is not None
+                for line in process.stdout:
+                    output_file.write(line)
+                    self.update_gui(line.strip())
+            else:
+                self.update_gui("Error: No output from the process.")
 
         self.update_gui(f"Processing completed for {self.selected_file}.")
         self.fall_status_label.config(text="Processing completed", style="Select.TLabel")
@@ -215,6 +220,12 @@ class FallDetectionApp:
 
             subject = "Fall Detection Alert"
             body = f"A fall was detected with a confidence score of {confidence_score:.2f}."
+            if sender_email is None or recipient_email is None:
+                raise ValueError("Sender email and recipient email must be provided.")
+
+            if sender_password is None:
+                raise ValueError("Sender password must be provided.")
+
             message = MIMEMultipart()
             message["From"] = sender_email
             message["To"] = recipient_email
