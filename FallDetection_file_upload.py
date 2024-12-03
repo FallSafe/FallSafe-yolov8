@@ -22,8 +22,6 @@ import numpy as np
 
 load_dotenv()
 
-output_file_path = "output/classification_output.txt"
-frame_output_file = "output/frame_output.json"
 CONFIDENCE_THRESHOLD = 0.5
 
 def create_output_directory():
