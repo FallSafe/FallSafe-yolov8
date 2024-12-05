@@ -25,13 +25,10 @@ load_dotenv()
 CONFIDENCE_THRESHOLD = 0.5
 
 def create_output_directory():
-    # Get the current date and time
     now = datetime.now()
-    # Format the date and time for the folder name
     folder_name = now.strftime("%Y-%m-%d_%H-%M-%S")
     output_dir = os.path.join("output", folder_name)
 
-    # Create the directory if it doesn't exist
     os.makedirs(output_dir, exist_ok=True)
     return output_dir
 
@@ -40,13 +37,11 @@ def convert_video_to_lowerfps(self):
     input_video = self.selected_file
     output_video = os.path.join(self.save_dir, f"converted_{self.filename}.mp4")
 
-    # Check if the input video file is valid and exists
     if not input_video or not isinstance(input_video, str) or not os.path.exists(input_video):
         self.update_gui(f"Error: The video file does not exist or is invalid: {input_video}")
         return
 
     try:
-        # Load video and set FPS to 30
         clip = VideoFileClip(input_video)
         clip = clip.set_fps(30)
         clip.write_videofile(output_video, codec='libx265', audio_codec='aac', threads=8)
@@ -57,21 +52,18 @@ def convert_video_to_lowerfps(self):
 
 def create_gif_from_frames(frames, gif_path):
     """Create a GIF from the list of frames."""
-    imageio.mimsave(gif_path, frames, duration=0.5)  # Adjust duration as needed
+    imageio.mimsave(gif_path, frames, duration=0.5)
 
 def process_video_for_falls(input_video, output_gif, queue, overlap_threshold=0.5):
     """Process the video to detect falls and create a GIF."""
-    fall_detected_frames = []  # List to hold frames where falls are detected
-    predictions_list = []  # List to hold predictions for JSON output
+    fall_detected_frames = []
+    predictions_list = []
 
-    # Open a text file for logging
     log_file_path = "yolo_output_log.txt"
     with open(log_file_path, "w") as log_file:
         try:
-            # Load the YOLO model
-            model = YOLO("model/model.pt")  # Adjust the model path as needed
+            model = YOLO("model/best.pt")
 
-            # Open the video file using OpenCV
             cap = cv2.VideoCapture(input_video)
 
             if not cap.isOpened():
@@ -81,35 +73,30 @@ def process_video_for_falls(input_video, output_gif, queue, overlap_threshold=0.
             while True:
                 ret, frame = cap.read()
                 if not ret:
-                    break  # Exit the loop if there are no more frames
+                    break
 
-                # Run YOLO on the current frame
-                results = model(frame)  # Get results from the model
+                results = model(frame)
 
-                # Log the results for debugging
                 log_file.write(f"Processing frame {cap.get(cv2.CAP_PROP_POS_FRAMES)}\n")
                 if results is None:
                     log_file.write("Warning: No results returned from YOLO model.\n")
                     continue
 
-                # Process results
                 for result in results:
                     if hasattr(result, 'boxes'):
-                        boxes = result.boxes  # Get the bounding boxes
+                        boxes = result.boxes
                         if boxes is None:
                             log_file.write("Warning: No boxes detected.\n")
                             continue
                         
-                        # Apply Non-Maximum Suppression (NMS) based on the overlap threshold
                         boxes_data = []
                         for box in boxes:
-                            class_id = int(box.cls[0])  # Get class ID
-                            confidence = box.conf[0].item()  # Get confidence score
-                            if confidence > 0.5:  # Adjust confidence threshold as needed
-                                x, y, w, h = box.xywh[0].tolist()  # Get bounding box coordinates
+                            class_id = int(box.cls[0])
+                            confidence = box.conf[0].item()
+                            if confidence > 0.5:
+                                x, y, w, h = box.xywh[0].tolist()
                                 boxes_data.append((x, y, w, h, confidence, class_id))
 
-                        # Perform NMS
                         if boxes_data:
                             boxes_data = np.array(boxes_data)
                             x1 = boxes_data[:, 0] - boxes_data[:, 2] / 2
@@ -117,12 +104,11 @@ def process_video_for_falls(input_video, output_gif, queue, overlap_threshold=0.
                             x2 = boxes_data[:, 0] + boxes_data[:, 2] / 2
                             y2 = boxes_data[:, 1] + boxes_data[:, 3] / 2
 
-                            # Calculate area
                             areas = (x2 - x1) * (y2 - y1)
                             indices = cv2.dnn.NMSBoxes(boxes_data[:, :4].tolist(), boxes_data[:, 4].tolist(), 0.5, overlap_threshold)
 
                             for index in indices:
-                                box = boxes_data[index]  # Access the index directly
+                                box = boxes_data[index]
                                 x, y, w, h, confidence, class_id = box
                                 prediction = {
                                     "x": x,
@@ -130,36 +116,31 @@ def process_video_for_falls(input_video, output_gif, queue, overlap_threshold=0.
                                     "width": w,
                                     "height": h,
                                     "confidence": confidence,
-                                    "class": result.names[class_id],  # Get class name
+                                    "class": result.names[class_id],
                                     "class_id": class_id,
                                 }
                                 predictions_list.append(prediction)
 
-                                if class_id == 0:  # Assuming '0' is the class ID for 'fall'
-                                    fall_detected_frames.append(frame)  # Add the frame to the list if a fall is detected
+                                if class_id == 0:
+                                    fall_detected_frames.append(frame)
 
-                # Optionally, draw bounding boxes on the frame for visualization
                 for box in boxes:
-                    x1, y1, x2, y2 = map(int, box.xyxy[0])  # Get bounding box coordinates
-                    cv2.rectangle(frame, (x1, y1), (x2, y2), (0, 255, 0), 2)  # Draw rectangle
+                    x1, y1, x2, y2 = map(int, box.xyxy[0])
+                    cv2.rectangle(frame, (x1, y1), (x2, y2), (0, 255, 0), 2)
 
-                # Display the frame (optional)
                 cv2.imshow("Live Video Feed", frame)
                 if cv2.waitKey(1) & 0xFF == ord('q'):
                     break
 
-            cap.release()  # Release the video capture object
-            cv2.destroyAllWindows()  # Close all OpenCV windows
+            cap.release()
+            cv2.destroyAllWindows()
 
-            # Create JSON output
             output_json = {"predictions": predictions_list}
-            print(json.dumps(output_json, indent=2))  # Print the JSON output
+            print(json.dumps(output_json, indent=2))
 
-            # Create GIF from detected fall frames
             if fall_detected_frames:
-                # Convert BGR frames to RGB for GIF creation
                 fall_detected_frames_rgb = [cv2.cvtColor(f, cv2.COLOR_BGR2RGB) for f in fall_detected_frames]
-                imageio.mimsave(output_gif, fall_detected_frames_rgb, duration=0.5)  # Adjust duration as needed
+                imageio.mimsave(output_gif, fall_detected_frames_rgb, duration=0.5)
                 queue.put(f"GIF created and saved as {output_gif}")
             else:
                 queue.put("No falls detected; GIF not created.")
@@ -252,7 +233,6 @@ class FallDetectionApp:
         if not os.path.exists(directory):
             os.makedirs(directory)
 
-        # Clear existing files in output folder
         for root, dirs, files in os.walk(self.save_dir):
             for file in files:
                 file_path = os.path.join(root, file)
@@ -264,7 +244,7 @@ class FallDetectionApp:
             for dir in dirs:
                 dir_path = os.path.join(root, dir)
                 try:
-                    os.rmdir(dir_path)  # Remove empty directories
+                    os.rmdir(dir_path)
                     print(f"Deleted directory: {dir_path}")
                 except Exception as e:
                     print(f"Error removing directory {dir_path}: {e}")
@@ -291,7 +271,7 @@ class FallDetectionApp:
     def get_filename(self):
         """Extract filename without extension from the selected file path."""
         if self.selected_file is None:
-            return None  # or raise ValueError("No file selected.")
+            return None
 
         match = re.search(r".*[\\/](.+)\.[^.]+$", self.selected_file)
         return match.group(1) if match else None
@@ -331,30 +311,28 @@ class FallDetectionApp:
 
         self.filename = self.get_filename()
 
-        # Start processing in a separate thread
         if self.isVideo:
             input_video = self.selected_file
             output_gif = os.path.join(self.save_dir, f"falls_detected.gif")
             queue = multiprocessing.Queue()
             process = multiprocessing.Process(target=process_video_for_falls, args=(input_video, output_gif, queue))
             process.start()
-            self.root.after(100, self.check_process, process, queue)  # Check the process periodically
+            self.root.after(100, self.check_process, process, queue)
         else:
-            self.process_image(self.selected_file)  # Process image
+            self.process_image(self.selected_file)
 
     def check_process(self, process, queue):
         """Check if the process is still running and update the GUI."""
         output_gif = os.path.join(self.save_dir, f"falls_detected.gif")
         if process.is_alive():
-            self.root.after(100, self.check_process, process, queue)  # Check again after 100ms
+            self.root.after(100, self.check_process, process, queue)
         else:
-            # Process finished, get the result from the queue
             while not queue.empty():
                 message = queue.get()
-                self.update_gui(message)  # Update the GUI with the message
+                self.update_gui(message)
                 if "GIF created" in message:
-                    self.send_email_with_gif(output_gif, self.receiver_email.get())  # Send the GIF via email
-            self.start_button.config(state=tk.NORMAL)  # Re-enable the start button
+                    self.send_email_with_gif(output_gif, self.receiver_email.get())
+            self.start_button.config(state=tk.NORMAL)
 
     def process_file(self):
         """Process the selected file (image or video) in a separate thread."""
@@ -366,13 +344,12 @@ class FallDetectionApp:
             queue = multiprocessing.Queue()
             process = multiprocessing.Process(target=process_video_for_falls, args=(input_video, output_gif, queue))
             process.start()
-            self.root.after(100, self.check_process, process, queue)  # Check the process periodically
+            self.root.after(100, self.check_process, process, queue)
         else:
-            self.process_image(self.selected_file)  # Process image
-
+            self.process_image(self.selected_file)
         self.update_gui("Processing completed.")
         self.fall_status_label.config(text="Processing completed", style="Select.TLabel")
-        self.start_button.config(state=tk.NORMAL)  # Re-enable the start button
+        self.start_button.config(state=tk.NORMAL)
 
     def process_image(self, image_path):
         """Process the selected image for fall detection."""
@@ -382,45 +359,39 @@ class FallDetectionApp:
         command = f"yolo predict model={model_path} source={image_path} conf={CONFIDENCE_THRESHOLD} save=True project={self.save_dir} name=output device=0"
 
         try:
-            # Use subprocess.run to execute the command and wait for it to complete
             result = subprocess.run(command, stdout=subprocess.PIPE, stderr=subprocess.PIPE, universal_newlines=True, shell=True)
 
-            # Check for errors
             if result.returncode != 0:
                 self.update_gui(f"Error processing image: {result.stderr}")
                 return
 
-            # Process the output if needed
-            self.update_gui(result.stdout)  # Display any output from the command
+            self.update_gui(result.stdout)
 
-            # Check if the output files were created
-            output_file_path = os.path.join(self.save_dir, "output")  # Adjust based on your output structure
+            output_file_path = os.path.join(self.save_dir, "output")
             if os.path.exists(output_file_path):
                 self.update_gui("Detection completed successfully.")
-                self.handle_detection_results(output_file_path, image_path)  # Pass image_path for email
+                self.handle_detection_results(output_file_path, image_path)
             else:
                 self.update_gui("No output files found. Please check the YOLO command.")
 
         except Exception as e:
             self.update_gui(f"Error processing image: {e}")
 
-        # Ensure the GUI reflects that processing is complete
-        self.start_button.config(state=tk.NORMAL)  # Re-enable the start button
+        self.start_button.config(state=tk.NORMAL)
 
     def handle_detection_results(self, output_path, image_path):
         """Handle the results of the YOLO detection and send email with results."""
-        # Check if the uploaded file is a video or an image
+
         if self.isVideo:
-            output_gif = os.path.join(output_path, "falls_detected.gif")  # Adjust as needed
+            output_gif = os.path.join(output_path, "falls_detected.gif")
             if os.path.exists(output_gif):
-                self.send_email_with_gif(output_gif, self.receiver_email.get())  # Send the GIF via email
+                self.send_email_with_gif(output_gif, self.receiver_email.get())
                 self.update_gui("GIF created and email sent.")
             else:
                 self.update_gui("No GIF created from detection results.")
         else:
-            # If it's an image, send the original image
             if os.path.exists(image_path):
-                self.send_email_with_image(image_path, self.receiver_email.get())  # Send the image via email
+                self.send_email_with_image(image_path, self.receiver_email.get())
                 self.update_gui("Image sent via email.")
             else:
                 self.update_gui("Original image not found; email not sent.")
@@ -459,17 +430,17 @@ class FallDetectionApp:
 
     def display_detected_images(self):
         """Display the detected images in the UI."""
-        detected_images_path = os.path.join(self.save_dir, "output")  # Adjust the path as necessary
-        for image_file in glob.glob(os.path.join(detected_images_path, "*.jpg")):  # Assuming images are saved as .jpg
+        detected_images_path = os.path.join(self.save_dir, "output")
+        for image_file in glob.glob(os.path.join(detected_images_path, "*.jpg")):
             img = cv2.imread(image_file)
             if img is not None:
-                img = cv2.cvtColor(img, cv2.COLOR_BGR2RGB)  # Convert to RGB
-                img = cv2.resize(img, (640, 480))  # Resize for display
-                img = Image.fromarray(img)  # Ensure img is a valid PIL image
-                self.imgtk = ImageTk.PhotoImage(img)  # Create PhotoImage from PIL image
-                self.image_canvas.create_image(0, 0, anchor=tk.NW, image=self.imgtk)  # Display image in the canvas
-                self.image_reference = self.imgtk  # Store reference in the class instance to avoid garbage collection
-                self.output_text.insert(tk.END, "\n")  # Add a newline after each image
+                img = cv2.cvtColor(img, cv2.COLOR_BGR2RGB)
+                img = cv2.resize(img, (640, 480))
+                img = Image.fromarray(img)
+                self.imgtk = ImageTk.PhotoImage(img)
+                self.image_canvas.create_image(0, 0, anchor=tk.NW, image=self.imgtk)
+                self.image_reference = self.imgtk
+                self.output_text.insert(tk.END, "\n")
 
     def process_yolo_output(self, line):
         """Process YOLOv8 output to detect falls and handle email alerts."""
@@ -486,9 +457,9 @@ class FallDetectionApp:
                 self.fall_detected = True
                 self.update_gui(f"Fall detected in frame {self.total_frames} with confidence: {primary_score}")
                 self.send_email_alert(primary_label, primary_score)
-                self.update_detection_result("Fall Detected")  # Update the result label
+                self.update_detection_result("Fall Detected")
             else:
-                self.update_detection_result("No Fall Detected")  # Update the result label
+                self.update_detection_result("No Fall Detected")
 
     def send_email_alert(self, label, confidence_score):
         """Send an email notification when a fall is detected."""
