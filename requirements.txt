@@ -1,7 +1,13 @@
 opencv-python
 opencv-contrib-python
 ultralytics
+<<<<<<< HEAD
 moviepy2
 torch
 torchvision
 torchaudio
+=======
+torch --index-url https://download.pytorch.org/whl/cu124
+torchvision --index-url https://download.pytorch.org/whl/cu124
+torchaudio --index-url https://download.pytorch.org/whl/cu124
+>>>>>>> 222cc9bfd8480079f2bfebc72d9ec56119cf3767
