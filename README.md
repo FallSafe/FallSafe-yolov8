@@ -15,7 +15,7 @@
 ### Prerequisites
 
 - **Python**: Latest version
-- **NVIDIA GPU** (Optional but highly recommended): For accelerated processing
+- **NVIDIA GPU** (highly recommended): For accelerated processing
 
 ### Setup and Installation
 
@@ -48,13 +48,25 @@
 
 4. **Install GPU Drivers and CUDA**
    - Install NVIDIA GPU drivers.
-   - Verify CUDA installation.
 
 5. **Install Required Packages**
+   - Install the packages from the "requirements.txt" file.
+   
    ```bash
    pip install -r requirements.txt
    pip install torch torchvision torchaudio --index-url https://download.pytorch.org/whl/cu124
    ```
+   - Install pyTorch and its dependencies. Get the architecture, platform and select the latest version of cuda from [pyTorch Website](https://pytorch.org/)
+
+   ```bash
+   pip install torch torchvision torchaudio --index-url https://download.pytorch.org/whl/cu124
+   ```
+
+6. **Verification**
+   
+   - Verify all installations by running the test files from the "TestFiles" folder.
+      - Run "Test_Camera.py" to get the ids for the camera source.
+      - Run "Test_Cuda_GPU.py" to check the proper verification of cuda installation and gpu detection.
 
 ### Running the System
 
@@ -64,69 +76,36 @@
    python detection.py --model yolov8n.onnx --source data/videos/road.mp4
    python detection.py --model yolov8n.onnx --source 0
    ```
+   *NOTE: Get the detection.py from ultralytics github page and for yolov8
 
-2. **Get Labelled Dataset from Roboflow**
+2. **Prepare and Get Labelled Dataset from Roboflow**
    - Upload images to Roboflow and label them as either `fall` or `nofall`.
    - Discard any images that are not relevant by marking them as null.
-   - Download the structured dataset from Roboflow and select YOLO for model type when prompted.
+   - Download the structured dataset from Roboflow and select YOLOv8 for model type when prompted.
+   - Extract the zip file from roboflow
 
-3. **Organize the Dataset Using Organize.py**
-   - Edit `Organize.py` according to the dataset path.
-   - Organize the dataset by:
-     ```bash
-     python Organize.py
-     ```
-
-4. **Dataset Structure**
-   - The dataset structure will look like this after oranizing the dataset:
-     ```
-     dataset
-      ├── train
-      │   ├── fall
-      │   │   ├── image0.jpg
-      │   │   ├── image1.jpg
-      │   ├── nofall
-      │   │   ├── image0.jpg
-      │   │   ├── image1.jpg
-      ├── val
-      │   ├── fall
-      │   │   ├── image0.jpg
-      │   │   ├── image1.jpg
-      │   ├── nofall
-      │   │   ├── image0.jpg
-      │   │   ├── image1.jpg
-      ├── test
-      │   ├── fall
-      │   │   ├── image0.jpg
-      │   │   ├── image1.jpg
-      │   ├── nofall
-      │   │   ├── image0.jpg
-      │   │   ├── image1.jpg
-     ```
-
-5. **Train the Model**
-
+3. **Train the Model**
    - Modify the name for the current operation.
    - Adjust the parameters value to properly utilize the GPU.
 
    ```bash
-   yolo classify train model=yolov8l-cls.pt data="path/to/dataset" imgsz=224 device=0 workers=2 batch=16 epochs=100 patience=50 name=yolov8_fallsafe_classification
+   yolo detection train model=yolov8n.pt data="path/to/dataset" imgsz=224 device=0 workers=2 batch=16 epochs=100 patience=50 name=yolov8_fallsafe_detection
    ```
 
-6. **Continue Training after Pause OR Further Train model with new/updated Dataset**
+4. **Continue Training after Pause OR Further Train model with new/updated Dataset**
    
    ```bash
-   yolo classify train model=runs/classify/yolov8_fallsafe_classification/weights/last.pt resume=True
+   yolo classify train model=runs/classify/yolov8_fallsafe_detection/weights/last.pt resume=True
    ```
 
-7. **Perform Classification**
+5. **Perform Classification**
    ```bash
-   yolo classify predict model=runs/classify/yolov8_fallsafe_classification/weights/best.pt source="inference/classify/image.jpg" save=True
+   yolo classify predict model=runs/classify/yolov8_fallsafe_detection/weights/best.pt source="inference/classify/image.jpg" save=True
    ```
 
-8. **Real-Time Classification via Camera**
+6. **Real-Time Classification via Camera**
    ```bash
-   yolo detect predict model=runs/classify/yolov8_fallsafe_classification/weights/best.pt source="0" save=True conf=0.5 show=True save_txt=True line_thickness=1
+   yolo detect predict model=runs/classify/yolov8_fallsafe_detection/weights/best.pt source="0" save=True conf=0.5 show=True save_txt=True line_thickness=1
    ```
 
 ## Contributing
