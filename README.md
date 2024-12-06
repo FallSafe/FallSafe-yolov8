@@ -89,18 +89,18 @@
    - Adjust the parameters value to properly utilize the GPU.
 
    ```bash
-   yolo detection train model=yolov8n.pt data="path/to/dataset" imgsz=224 device=0 workers=2 batch=16 epochs=100 patience=50 name=yolov8_fallsafe_detection
+   yolo detect train model=yolov8n.pt data="path/to/dataset" imgsz=224 device=0 workers=2 batch=16 epochs=100 patience=50 name=yolov8_fallsafe_detection
    ```
 
 4. **Continue Training after Pause OR Further Train model with new/updated Dataset**
    
    ```bash
-   yolo classify train model=runs/classify/yolov8_fallsafe_detection/weights/last.pt resume=True
+   yolo detect train model=runs/classify/yolov8_fallsafe_detection/weights/last.pt resume=True
    ```
 
 5. **Perform Classification**
    ```bash
-   yolo classify predict model=runs/classify/yolov8_fallsafe_detection/weights/best.pt source="inference/classify/image.jpg" save=True
+   yolo detect predict model=runs/classify/yolov8_fallsafe_detection/weights/best.pt source="path/image.jpg" save=True
    ```
 
 6. **Real-Time Classification via Camera**
