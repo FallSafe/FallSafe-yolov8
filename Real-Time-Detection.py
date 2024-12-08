@@ -1,176 +1,89 @@
 import cv2
-import uuid
-import json
-import smtplib
-import os
-import time
-from email.mime.text import MIMEText
-from email.mime.multipart import MIMEMultipart
-from ultralytics import YOLO
-from PIL import Image
-import numpy as np
 import threading
-from whatsapp import send_whatsapp_alert
-from message import send_sms_alert
+import time
+from ultralytics import YOLO
+from flask import Flask, render_template, Response, request, jsonify
+from Email import send_email_alert
 
+# Load YOLOv8 model
 model = YOLO("model/model.pt")
 
+# Video capture
 cap = cv2.VideoCapture(0)
-if not cap.isOpened():
-    print("Error: Could not open video stream.")
-    exit()
 
-fall_frames = []
-fall_start_time = None
+# Flask app
+app = Flask(__name__)
 
-def send_alerts(label, confidence_score):
-    """
-    Sends email, SMS and WhatsApp alerts when a fall is detected.
-    """
-    # Send email (existing functionality)
-    send_email_alert(label, confidence_score)
-    
-    # Start SMS and WhatsApp alerts in separate threads
-    threading.Thread(target=send_sms_alert, daemon=True).start()
-    threading.Thread(target=send_whatsapp_alert, daemon=True).start()
+fall_detected = False
+fall_detected_lock = threading.Lock()
+fall_detected_time = None
+email_set = False  # Track whether the email has been set
 
-def send_email_alert(label, confidence_score):
-    """
-    Sends an email alert when a fall is detected.
-    """
-    try:
-        sender_email = os.getenv("SENDER_EMAIL")
-        sender_password = os.getenv("SENDER_PASSWORD")
-        recipient_email = "recipient@example.com"
+def process_predictions(results, frame):
+    global fall_detected, fall_detected_time
+    if isinstance(results, list):
+        results = results[0]
+    if results.boxes:
+        for box in results.boxes:
+            if box.cls[0] == "fall":
+                with fall_detected_lock:
+                    if not fall_detected:
+                        fall_detected = True
+                        fall_detected_time = time.time()
 
-        if not sender_email or not recipient_email or not sender_password:
-            raise ValueError(
-                "Sender email, recipient email, and password must be provided."
-            )
+                        # Save the current frame as an image
+                        frame_path = f"fall_frame_{int(time.time())}.jpg"
+                        cv2.imwrite(frame_path, frame)
 
-        subject = "Fall Detection Alert"
-        body = f"A fall was detected with a confidence score of {confidence_score:.2f}."
+                        # Send email with frame attachment
+                        send_email_alert(
+                            label="Fall Detected!",
+                            confidence_score=box.conf[0],
+                            receiver_email="recipient@example.com",
+                            frame_path=frame_path
+                        )
+    return fall_detected
 
-        message = MIMEMultipart()
-        message["From"] = sender_email
-        message["To"] = recipient_email
-        message["Subject"] = subject
-        message.attach(MIMEText(body, "plain"))
+def clear_fall_detection():
+    global fall_detected, fall_detected_time
+    if fall_detected_time and time.time() - fall_detected_time > 5:
+        with fall_detected_lock:
+            fall_detected = False
+            fall_detected_time = None
 
-        with smtplib.SMTP_SSL("smtp.gmail.com", 465) as server:
-            server.login(sender_email, sender_password)
-            server.sendmail(sender_email, recipient_email, message.as_string())
-            print(f"Alert sent to {recipient_email}.")
-
-    except Exception as e:
-        print(f"Error sending email: {e}")
-
-
-def create_gif(frames, filename="fall_detection.gif"):
-    """
-    Creates a GIF from the frames of the fall detection event.
-    """
-    pil_frames = [Image.fromarray(frame.astype(np.uint8)) for frame in frames]
-
-    pil_frames[0].save(
-        filename,
-        save_all=True,
-        append_images=pil_frames[1:],
-        optimize=False,
-        duration=500,
-        loop=0,
-    )
-    print(f"GIF saved as {filename}.")
-
-
-def process_predictions(results):
-    """
-    Processes the YOLO results and returns predictions in a structured format.
-    """
-    predictions = []
-    fall_detected = False
-
-    for box in results.boxes:
-        x, y, w, h = box.xywh[0].tolist()
-        conf = box.conf[0].item()
-        cls = box.cls[0].item()
-        class_name = results.names[int(cls)]
-
-        print(f"Detected: {class_name}, Confidence: {conf}")
-
-        if conf >= 0.1:
-            detection_id = str(uuid.uuid4())
-            prediction = {
-                "x": x,
-                "y": y,
-                "width": w,
-                "height": h,
-                "confidence": conf,
-                "class": class_name,
-                "class_id": int(cls),
-                "detection_id": detection_id,
-            }
-
-            predictions.append(prediction)
-
-            if class_name == "fall":
-                fall_detected = True
-                send_alerts(class_name, conf)
-
-    return predictions, fall_detected
-
-
-def main():
-    """
-    Main function to run the fall detection system, handle video stream, and process frames.
-    """
-    fall_frames = []
-    fall_start_time = None
-
+def generate_frames():
+    global email_set
     while True:
         ret, frame = cap.read()
         if not ret:
-            print("Error: Failed to capture image.")
             break
+        if email_set:  # Process only if email is set
+            results = model(frame)
+            process_predictions(results, frame)
+            clear_fall_detection()
+            if hasattr(results, 'plot'):
+                frame = results.plot()
+        _, buffer = cv2.imencode('.jpg', frame)
+        frame = buffer.tobytes()
+        yield (b'--frame\r\nContent-Type: image/jpeg\r\n\r\n' + frame + b'\r\n')
 
-        frame_resized = cv2.resize(frame, (640, 640))
-        results = model(frame_resized)
+@app.route('/')
+def index():
+    return render_template('index.html', fall_detected=fall_detected, email_set=email_set)
 
-        predictions, fall_detected = process_predictions(results)
+@app.route('/video_feed')
+def video_feed():
+    return Response(generate_frames(), mimetype='multipart/x-mixed-replace; boundary=frame')
 
-        output = {"predictions": predictions}
-        output_json = json.dumps(output, indent=2)
-        print(output_json)
-
-        if fall_detected:
-            if fall_start_time is None:
-                fall_start_time = time.time()
-
-            fall_frames.append(frame)
-
-        if fall_start_time and time.time() - fall_start_time >= 10:
-            if fall_frames:
-                create_gif(fall_frames)
-                print("GIF created from fall frames.")
-
-            fall_frames = []
-            fall_start_time = None
-
-        for result in results:
-            if hasattr(result, 'boxes'):
-                for box in result.boxes:
-                    x, y, w, h = map(int, box.xywh[0].tolist())
-                    x2, y2 = x + w, y + h
-                    cv2.rectangle(frame, (x, y), (x2, y2), (0, 255, 0), 2)
-
-        cv2.imshow("Live Video Feed", frame)
-
-        if cv2.waitKey(1) & 0xFF == ord("q"):
-            break
-
-    cap.release()
-    cv2.destroyAllWindows()
-
+@app.route('/send_email', methods=['POST'])
+def send_email():
+    global email_set
+    data = request.get_json()
+    recipient = data.get('email', None)
+    if recipient:
+        email_set = True  # Set email flag to true
+        return jsonify({"message": "Email saved successfully!"})
+    return jsonify({"message": "Invalid email address"}), 400
 
 if __name__ == "__main__":
-    main()
+    app.run(debug=True, host='0.0.0.0', port=5000)

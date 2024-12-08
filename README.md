@@ -54,12 +54,13 @@
    
    ```bash
    pip install -r requirements.txt
-   pip install torch torchvision torchaudio --index-url https://download.pytorch.org/whl/cu124
    ```
    - Install pyTorch and its dependencies. Get the architecture, platform and select the latest version of cuda from [pyTorch Website](https://pytorch.org/)
 
+   Example:
+   
    ```bash
-   pip install torch torchvision torchaudio --index-url https://download.pytorch.org/whl/cu124
+   pip3 install torch torchvision torchaudio --index-url https://download.pytorch.org/whl/cu124
    ```
 
 6. **Verification**

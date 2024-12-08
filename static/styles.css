@@ -1,0 +1,68 @@
+/* static/styles.css */
+
+body {
+    font-family: Arial, sans-serif;
+    background-color: #f4f4f4;
+    margin: 0;
+    padding: 0;
+}
+
+.container {
+    max-width: 800px;
+    margin: 0 auto;
+    padding: 20px;
+    background-color: #ffffff;
+    border-radius: 8px;
+    box-shadow: 0 2px 10px rgba(0, 0, 0, 0.1);
+}
+
+h1 {
+    color: #333;
+    text-align: center;
+}
+
+h2 {
+    color: #555;
+}
+
+#status {
+    margin: 20px 0;
+    text-align: center;
+}
+
+#fallStatus {
+    font-weight: bold;
+    color: #d9534f; /* Red color for fall detected */
+}
+
+#videoStream {
+    text-align: center;
+}
+
+#videoStream img {
+    width: 100%;
+    height: auto;
+    border: 2px solid #007bff; /* Blue border for video feed */
+    border-radius: 8px;
+}
+
+#alertMessage {
+    background-color: #f8d7da; /* Light red background */
+    color: #721c24; /* Dark red text */
+    padding: 15px;
+    border: 1px solid #f5c6cb; /* Light red border */
+    border-radius: 5px;
+    margin-top: 20px;
+    text-align: center;
+}
+
+footer {
+    margin-top: 20px;
+    text-align: center;
+    font-size: 0.9em;
+    color: #777;
+}
+
+footer p {
+    margin: 5px 0;
+}

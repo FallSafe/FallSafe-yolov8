@@ -1,26 +1,20 @@
-import smtplib
 import os
 import re
-import json
-import subprocess
 import threading
 import tkinter as tk
 from tkinter import ttk, filedialog
-from email.mime.text import MIMEText
-from email.mime.multipart import MIMEMultipart
-import cv2
 import glob
-import sys
-import io
 from dotenv import load_dotenv
 from moviepy.editor import VideoFileClip
-from whatsapp import send_whatsapp_alert
-from message import send_sms_alert
-
+from Whatsapp import send_whatsapp_alert
+from Message import send_sms_alert
+from Email import send_email_alert
+from ultralytics import YOLO
+from queue import Queue
+import json
+import uuid
 load_dotenv()
 
-output_file_path = "output/classification_output.txt"
-frame_output_file = "output/frame_output.json"
 CONFIDENCE_THRESHOLD = 0.5
 
 class FallDetectionApp:
@@ -36,6 +30,8 @@ class FallDetectionApp:
         self.filename = "junk"
         self.fall_buffer = []
         self.fall_detected = False
+        self.model = YOLO("model/model.pt")
+        self.email_status_queue = Queue()
 
         self.setup_gui()
 
@@ -75,7 +71,6 @@ class FallDetectionApp:
         if not os.path.exists(directory):
             os.makedirs(directory)
 
-        # Clear existing files in output folder
         for root, dirs, files in os.walk(self.save_dir):
             for file in files:
                 file_path = os.path.join(root, file)
@@ -87,7 +82,7 @@ class FallDetectionApp:
             for dir in dirs:
                 dir_path = os.path.join(root, dir)
                 try:
-                    os.rmdir(dir_path)  # Remove empty directories
+                    os.rmdir(dir_path)
                     print(f"Deleted directory: {dir_path}")
                 except Exception as e:
                     print(f"Error removing directory {dir_path}: {e}")
@@ -150,102 +145,159 @@ class FallDetectionApp:
         self.update_gui("Processing started...")
 
         self.filename = self.get_filename()
-        threading.Thread(target=self.convert_video_to_lowerfps, daemon=True).start()
+        
+        # Process differently based on file type
+        if self.isVideo:
+            threading.Thread(target=self.convert_video_to_lowerfps, daemon=True).start()
+        else:  # Image processing
+            threading.Thread(target=lambda: self.process_video(self.selected_file), daemon=True).start()
 
     def convert_video_to_lowerfps(self):
-        """Convert video to 15 FPS and save it using moviepy2."""
-        input_video = self.selected_file
-        output_video = os.path.join(self.save_dir, f"converted_{self.filename}.mp4")
-        
+        """Convert video to 30 FPS and save it using moviepy2."""
         try:
-            # Load video and set FPS to 15
+            input_video = self.selected_file
+            output_video = os.path.join(self.save_dir, f"converted_{self.filename}.mp4")
+            
+            self.root.after(0, lambda: self.update_gui("Starting video conversion..."))
             clip = VideoFileClip(input_video)
             clip = clip.set_fps(30)
             clip.write_videofile(output_video, codec='libx264', audio_codec='aac', threads=4)
+            clip.close()
 
-            self.update_gui(f"Video converted to 30 FPS and saved as {output_video}")
+            self.root.after(0, lambda: self.update_gui("Video converted successfully. Starting processing..."))
+            
+            # Process the converted video
             self.process_video(output_video)
+
         except Exception as e:
-            self.update_gui(f"Error converting video: {e}")
-            return
+            self.root.after(0, lambda: self.update_gui(f"Error in conversion: {str(e)}"))
+            self.root.after(0, lambda: self.fall_status_label.config(
+                text="Conversion Failed", 
+                style="FallDetected.TLabel"
+            ))
+            self.root.after(0, lambda: self.start_button.config(state=tk.NORMAL))
 
     def process_video(self, video_path):
-        """Run YOLO model prediction command to detect falls in the converted video."""
-        model_path = "model/best.pt"
-        
-        common_params = f"model={model_path} source={video_path} conf={CONFIDENCE_THRESHOLD} save=True project={self.save_dir} name=output device=0 workers=8 batch=32"
-        
-        command = f"yolo predict {common_params} stream_buffer=False"
-
-        cv2.namedWindow("Frame", cv2.WINDOW_NORMAL)
-
-        # Run YOLO command and capture output
+        """Process video using YOLO model with JSON output"""
         try:
-            process = subprocess.Popen(command, stdout=subprocess.PIPE, stderr=subprocess.STDOUT, universal_newlines=True, shell=True, encoding='utf-8')
+            self.update_gui(f"Loading model and starting prediction...")
+            
+            # Verify video path exists
+            if not os.path.exists(video_path):
+                raise FileNotFoundError(f"Video file not found: {video_path}")
+            self.update_gui(f"Found video file at: {video_path}")
+
+            # Verify model is loaded
+            if self.model is None:
+                raise ValueError("YOLO model not properly initialized")
+            self.update_gui("Model verified")
+
+            # Start prediction with detailed logging
+            self.update_gui("Starting YOLO prediction...")
+            results = self.model.predict(
+                source=video_path,
+                conf=CONFIDENCE_THRESHOLD,
+                save=True,
+                project=self.save_dir,
+                name="output",
+                stream=True,
+                verbose=True  # Add verbose output
+            )
+            self.update_gui("YOLO prediction initialized")
+
+            self.update_gui("Starting frame processing...")
+            all_predictions = []
+            frame_count = 0
+            
+            # Process each frame with logging
+            for result in results:
+                frame_count += 1
+                self.update_gui(f"Processing frame {frame_count}")
+                
+                frame_predictions = self.process_frame_results(result)
+                if frame_predictions:
+                    all_predictions.extend(frame_predictions)
+                    output = {"predictions": frame_predictions}
+                    self.update_gui(f"Frame {frame_count} detections: {json.dumps(output, indent=2)}")
+                    
+                    # Check for falls and send alerts
+                    for pred in frame_predictions:
+                        if pred["class"] == "fall" and pred["confidence"] > CONFIDENCE_THRESHOLD:
+                            self.fall_detected = True
+                            self.update_gui(f"Fall detected in frame {frame_count} with confidence {pred['confidence']}")
+                            self.send_alerts("fall", pred["confidence"])
+
+            self.update_gui(f"Processed total of {frame_count} frames")
+            self.update_gui("Video processing completed")
+            
+            # Update GUI status
+            final_status = "Processing Complete - Falls Detected" if self.fall_detected else "Processing Complete - No Falls Detected"
+            final_style = "FallDetected.TLabel" if self.fall_detected else "NoFallDetected.TLabel"
+            
+            self.root.after(0, lambda: self.fall_status_label.config(text=final_status, style=final_style))
+            self.root.after(0, lambda: self.start_button.config(state=tk.NORMAL))
+            
+            return {"predictions": all_predictions}
+
         except Exception as e:
-            self.update_gui(f"Error running YOLO command: {e}")
-            return False
+            import traceback
+            error_details = traceback.format_exc()
+            self.update_gui(f"Error processing video: {str(e)}")
+            self.update_gui(f"Error details:\n{error_details}")
+            self.root.after(0, lambda: self.fall_status_label.config(text="Processing Failed", style="FallDetected.TLabel"))
+            self.root.after(0, lambda: self.start_button.config(state=tk.NORMAL))
+            return {"predictions": [], "error": str(e)}
 
-        sys.stdout = io.TextIOWrapper(sys.stdout.buffer, encoding='utf-8')
-        with open(output_file_path, "w", encoding='utf-8') as output_file:
-            for line in process.stdout:
-                output_file.write(line)
-                self.update_gui(line.strip())
-                self.process_yolo_output(line)
+    def process_frame_results(self, result):
+        """Process single frame results into structured JSON format"""
+        predictions = []
+        
+        if not hasattr(result, 'boxes'):
+            return predictions
 
-        self.update_gui(f"Processing completed for {self.selected_file}.")
-        self.fall_status_label.config(text="Processing completed", style="Select.TLabel")
+        for box in result.boxes:
+            x, y, w, h = box.xywh[0].tolist()
+            conf = box.conf[0].item()
+            cls = box.cls[0].item()
+            class_name = result.names[int(cls)]
 
-    def process_yolo_output(self, line):
-        """Process YOLOv8 output to detect falls and handle email alerts."""
-        if "Class" in line and "confidence" in line:
-            match = re.search(r"Class: (.*?), Confidence: (\d+\.\d+)", line)
-            if not match:
-                return
+            prediction = {
+                "x": float(x),
+                "y": float(y),
+                "width": float(w),
+                "height": float(h),
+                "class": class_name,
+                "confidence": float(conf),
+                "detection_id": str(uuid.uuid4())
+            }
+            
+            predictions.append(prediction)
 
-            primary_label = match.group(1)
-            primary_score = float(match.group(2))
-
-            if primary_label == "fall" and primary_score > CONFIDENCE_THRESHOLD:
-                self.fall_count += 1
-                self.fall_detected = True
-                self.update_gui(f"Fall detected in frame {self.total_frames} with confidence: {primary_score}")
-                self.send_alerts(primary_label, primary_score)
+        return predictions
 
     def send_alerts(self, label, confidence_score):
-        """Send email, SMS and WhatsApp alerts when fall is detected."""
-        # Send email (existing functionality)
-        self.send_email_alert(label, confidence_score)
+        """Send alerts with proper thread handling"""
+        email_thread = threading.Thread(
+            target=lambda q: q.put(send_email_alert(label, confidence_score)),
+            args=(self.email_status_queue,),
+            daemon=True
+        )
+        email_thread.start()
+
+        # threading.Thread(
+        #     target=lambda: send_sms_alert(label, confidence_score),
+        #     daemon=True
+        # ).start()
         
-        # Start SMS and WhatsApp alerts in separate threads
-        whatsapp_number = f"whatsapp:{self.receiver_phone.get()}" if hasattr(self, 'receiver_phone') else None
-        sms_number = self.receiver_phone.get() if hasattr(self, 'receiver_phone') else None
-        
-        threading.Thread(target=send_sms_alert, args=(sms_number,), daemon=True).start()
-        threading.Thread(target=send_whatsapp_alert, args=(whatsapp_number,), daemon=True).start()
+        # threading.Thread(
+        #     target=lambda: send_whatsapp_alert(label, confidence_score),
+        #     daemon=True
+        # ).start()
 
-    def send_email_alert(self, label, confidence_score):
-        """Send an email notification when a fall is detected."""
-        try:
-            sender_email = os.getenv('SENDER_EMAIL')
-            sender_password = os.getenv('SENDER_PASSWORD')
-            recipient_email = self.receiver_email.get()
+        if not self.email_status_queue.empty():
+            email_status = self.email_status_queue.get()
+            self.update_gui(f"Email alert status: {email_status}")
 
-            subject = "Fall Detection Alert"
-            body = f"A fall was detected with a confidence score of {confidence_score:.2f}."
-            message = MIMEMultipart()
-            message["From"] = sender_email
-            message["To"] = recipient_email
-            message["Subject"] = subject
-            message.attach(MIMEText(body, "plain"))
-
-            with smtplib.SMTP_SSL("smtp.gmail.com", 465) as server:
-                server.login(sender_email, sender_password)
-                server.sendmail(sender_email, recipient_email, message.as_string())
-                self.update_gui(f"Alert sent to {recipient_email}.")
-
-        except Exception as e:
-            self.update_gui(f"Error sending email: {e}")
 
 def run():
     """Run the Fall Detection application."""
