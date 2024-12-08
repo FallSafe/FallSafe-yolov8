@@ -3,12 +3,12 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>Real-Time Fall Detection</title>
+    <title>Fall Detection System</title>
     <link rel="stylesheet" href="static/styles.css">
 </head>
 <body>
     <div class="container">
-        <h1>Real-Time Fall Detection System</h1>
+        <h1>Fall Detection System</h1>
         <div id="status">
             <h2>Status: <span id="fallStatus">Waiting for input...</span></h2>
         </div>
@@ -16,40 +16,17 @@
             <h3>Live Camera Feed:</h3>
             <img src="{{ url_for('video_feed') }}" alt="Live Video Feed">
         </div>
-        <div id="alertMessage" style="display: none;">
+        <div id="alertMessage" style="display: none; color: red;">
             <h3>ALERT: FALL DETECTED!</h3>
-            <p>The system has detected a fall. Please check immediately.</p>
-        </div>
+            <p>Please check immediately. Notification sent to registered email.</p>
+        </div>        
         <div>
-            <label for="recipientEmail">Enter your email to receive alerts:</label>
-            <input type="email" id="recipientEmail" placeholder="recipient@email.com">
+            <label for="recipientEmail">Enter your email for alerts:</label>
+            <input type="email" id="recipientEmail" placeholder="example@email.com">
             <button id="saveEmail">Save</button>
         </div>
-        <footer>
-            <p>&copy; 2024 FallSafe Project | Developed by Team FallSafe</p>
-        </footer>
     </div>
-    
-    <script>
-        document.getElementById("saveEmail").addEventListener("click", () => {
-            const recipientEmail = document.getElementById("recipientEmail").value;
-            if (recipientEmail) {
-                fetch('/send_email', {
-                    method: 'POST',
-                    headers: { 'Content-Type': 'application/json' },
-                    body: JSON.stringify({ email: recipientEmail })
-                })
-                .then(response => response.json())
-                .then(data => {
-                    console.log(data.message);
-                    alert("Email saved successfully! Live feed is now active.");
-                    document.getElementById("videoStream").style.display = "block";
-                })
-                .catch(error => console.error('Error saving email:', error));
-            } else {
-                alert("Please enter a valid email address.");
-            }
-        });
-    </script>
+    <footer>&copy; 2024 FallSafe Project</footer>
+    <script src="static/script.js"></script>
 </body>
 </html>

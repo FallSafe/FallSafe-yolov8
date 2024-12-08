@@ -22,10 +22,20 @@ email_set = False  # Track whether the email has been set
 def process_predictions(results, frame):
     global fall_detected, fall_detected_time
     if isinstance(results, list):
-        results = results[0]
+        results = results[0]  # Getting the first result if it's a list
+
+    # Access the Probs object
+    probs = results.probs  
+
+    # Extract probabilities for 'fall' and 'nofall'
+    fall_prob = probs.top1conf.item()  # Use .item() to get the value
+    nofall_prob = probs.top5conf[1].item()  # Use .item() for the second class
+
+    print("fall_prob =", fall_prob, "nofall_prob =", nofall_prob)
+
     if results.boxes:
         for box in results.boxes:
-            if box.cls[0] == "fall":
+            if box.cls[0] == 0:  # Assuming 'fall' class has index 0
                 with fall_detected_lock:
                     if not fall_detected:
                         fall_detected = True
@@ -38,14 +48,16 @@ def process_predictions(results, frame):
                         # Send email with frame attachment
                         send_email_alert(
                             label="Fall Detected!",
-                            confidence_score=box.conf[0],
-                            receiver_email="recipient@example.com",
+                            confidence_score=box.conf[0].item(),  # Use .item() for confidence score
+                            receiver_email="arbaaz14122002@gmail.com",
                             frame_path=frame_path
                         )
     return fall_detected
 
+
 def clear_fall_detection():
     global fall_detected, fall_detected_time
+    # Reset detection if no fall is detected for more than 5 seconds
     if fall_detected_time and time.time() - fall_detected_time > 5:
         with fall_detected_lock:
             fall_detected = False
@@ -59,10 +71,10 @@ def generate_frames():
             break
         if email_set:  # Process only if email is set
             results = model(frame)
-            process_predictions(results, frame)
-            clear_fall_detection()
+            fall_detected = process_predictions(results, frame)
+            clear_fall_detection()  # Clear detection after 5 seconds
             if hasattr(results, 'plot'):
-                frame = results.plot()
+                frame = results.plot()  # Draws predictions on the frame
         _, buffer = cv2.imencode('.jpg', frame)
         frame = buffer.tobytes()
         yield (b'--frame\r\nContent-Type: image/jpeg\r\n\r\n' + frame + b'\r\n')
