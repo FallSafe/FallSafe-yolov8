@@ -9,6 +9,9 @@ from email.mime.multipart import MIMEMultipart
 from ultralytics import YOLO
 from PIL import Image
 import numpy as np
+import threading
+from whatsapp import send_whatsapp_alert
+from message import send_sms_alert
 
 model = YOLO("model/model.pt")
 
@@ -20,6 +23,16 @@ if not cap.isOpened():
 fall_frames = []
 fall_start_time = None
 
+def send_alerts(label, confidence_score):
+    """
+    Sends email, SMS and WhatsApp alerts when a fall is detected.
+    """
+    # Send email (existing functionality)
+    send_email_alert(label, confidence_score)
+    
+    # Start SMS and WhatsApp alerts in separate threads
+    threading.Thread(target=send_sms_alert, daemon=True).start()
+    threading.Thread(target=send_whatsapp_alert, daemon=True).start()
 
 def send_email_alert(label, confidence_score):
     """
@@ -102,7 +115,7 @@ def process_predictions(results):
 
             if class_name == "fall":
                 fall_detected = True
-                send_email_alert(class_name, conf)
+                send_alerts(class_name, conf)
 
     return predictions, fall_detected
 

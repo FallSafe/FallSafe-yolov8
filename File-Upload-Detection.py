@@ -14,6 +14,8 @@ import sys
 import io
 from dotenv import load_dotenv
 from moviepy.editor import VideoFileClip
+from whatsapp import send_whatsapp_alert
+from message import send_sms_alert
 
 load_dotenv()
 
@@ -51,11 +53,15 @@ class FallDetectionApp:
         self.receiver_email = ttk.Entry(main_frame, width=30)
         self.receiver_email.grid(row=1, column=1, padx=10, pady=5)
 
+        ttk.Label(main_frame, text="Recipient Phone:").grid(row=2, column=0, padx=10, pady=5)
+        self.receiver_phone = ttk.Entry(main_frame, width=30)
+        self.receiver_phone.grid(row=2, column=1, padx=10, pady=5)
+
         self.output_text = tk.Text(main_frame, height=20, width=70)
-        self.output_text.grid(row=2, column=0, columnspan=2, padx=10, pady=10)
+        self.output_text.grid(row=3, column=0, columnspan=2, padx=10, pady=10)
 
         self.fall_status_label = ttk.Label(main_frame, text="Select a file to start", style="Select.TLabel")
-        self.fall_status_label.grid(row=3, column=0, columnspan=2, padx=10, pady=10)
+        self.fall_status_label.grid(row=4, column=0, columnspan=2, padx=10, pady=10)
 
         style = ttk.Style()
         style.configure("FallDetected.TLabel", foreground="red")
@@ -204,7 +210,19 @@ class FallDetectionApp:
                 self.fall_count += 1
                 self.fall_detected = True
                 self.update_gui(f"Fall detected in frame {self.total_frames} with confidence: {primary_score}")
-                self.send_email_alert(primary_label, primary_score)
+                self.send_alerts(primary_label, primary_score)
+
+    def send_alerts(self, label, confidence_score):
+        """Send email, SMS and WhatsApp alerts when fall is detected."""
+        # Send email (existing functionality)
+        self.send_email_alert(label, confidence_score)
+        
+        # Start SMS and WhatsApp alerts in separate threads
+        whatsapp_number = f"whatsapp:{self.receiver_phone.get()}" if hasattr(self, 'receiver_phone') else None
+        sms_number = self.receiver_phone.get() if hasattr(self, 'receiver_phone') else None
+        
+        threading.Thread(target=send_sms_alert, args=(sms_number,), daemon=True).start()
+        threading.Thread(target=send_whatsapp_alert, args=(whatsapp_number,), daemon=True).start()
 
     def send_email_alert(self, label, confidence_score):
         """Send an email notification when a fall is detected."""
