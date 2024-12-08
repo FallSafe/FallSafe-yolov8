@@ -2,6 +2,7 @@ opencv-python
 opencv-contrib-python
 ultralytics
 moviepy2
+python-dotenv
 torch
 torchvision
 torchaudio
