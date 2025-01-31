@@ -1,3 +1,4 @@
+icecream
 opencv-python
 opencv-contrib-python
 ultralytics
@@ -6,3 +7,7 @@ python-dotenv
 torch
 torchvision
 torchaudio
+flask
+flask-cors
+twilio
+email-validator
