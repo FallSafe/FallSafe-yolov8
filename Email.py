@@ -27,18 +27,15 @@ def send_email_alert(label, confidence_score, receiver_email, frame_path=None):
         if not receiver_email:
             raise ValueError("Receiver email is not provided.")
 
-        # Email content
         subject = f"Alert: {label}"
         body = f"A fall was detected with a confidence score of {confidence_score:.2f}. Please check the attached frame for details."
 
-        # Create email message
         message = MIMEMultipart()
         message["From"] = sender_email
         message["To"] = receiver_email
         message["Subject"] = subject
         message.attach(MIMEText(body, "plain"))
 
-        # Attach the frame if provided
         if frame_path and os.path.exists(frame_path):
             with open(frame_path, "rb") as attachment:
                 part = MIMEBase("application", "octet-stream")
@@ -50,7 +47,6 @@ def send_email_alert(label, confidence_score, receiver_email, frame_path=None):
                 )
                 message.attach(part)
 
-        # Send email via SMTP server
         with smtplib.SMTP_SSL(smtp_host, smtp_port) as server:
             server.login(sender_email, sender_password)
             server.sendmail(sender_email, receiver_email, message.as_string())

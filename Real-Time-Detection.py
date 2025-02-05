@@ -1,101 +1,153 @@
 import cv2
+import torch
 import threading
+import multiprocessing
 import time
 from ultralytics import YOLO
 from flask import Flask, render_template, Response, request, jsonify
 from Email import send_email_alert
+# from Whatsapp import send_whatsapp_alert
+# from Message import send_sms_alert
+from icecream import ic
+import os
+import shutil
 
-# Load YOLOv8 model
-model = YOLO("model/model.pt")
+model_path = "model/model.pt"
+if not os.path.exists(model_path):
+    raise FileNotFoundError(f"Model file not found at {model_path}")
 
-# Video capture
-cap = cv2.VideoCapture(0)
+model = YOLO(model_path)
 
-# Flask app
 app = Flask(__name__)
 
 fall_detected = False
 fall_detected_lock = threading.Lock()
 fall_detected_time = None
-email_set = False  # Track whether the email has been set
+alert_set = False
+recipient = ""
+tonumber = ""
+confidence = 1.0
 
 def process_predictions(results, frame):
+    """
+    Process the classification results. For each result, extract the top predicted class and
+    confidence using the 'probs' attribute. If a 'fall' is detected with a confidence
+    equal to or above the user-specified threshold, send an email alert.
+    """
     global fall_detected, fall_detected_time
-    if isinstance(results, list):
-        results = results[0]  # Getting the first result if it's a list
 
-    # Access the Probs object
-    probs = results.probs  
+    if not results:
+        print("No results returned by the model.")
+        return fall_detected
 
-    # Extract probabilities for 'fall' and 'nofall'
-    fall_prob = probs.top1conf.item()  # Use .item() to get the value
-    nofall_prob = probs.top5conf[1].item()  # Use .item() for the second class
+    for r in results:
+        probs = r.probs  
+        if probs is None:
+            print("No probability scores available in the result.")
+            continue
 
-    print("fall_prob =", fall_prob, "nofall_prob =", nofall_prob)
+        class_idx = probs.top1  
+        pred_conf = probs.data[class_idx].item()  
+        class_name = r.names[class_idx]  
 
-    if results.boxes:
-        for box in results.boxes:
-            if box.cls[0] == 0:  # Assuming 'fall' class has index 0
-                with fall_detected_lock:
-                    if not fall_detected:
-                        fall_detected = True
-                        fall_detected_time = time.time()
+        ic(f"Predicted Class: {class_name}, Confidence: {pred_conf:.2f}")
+        if class_name == "fall":
+            if pred_conf < confidence:
+                ic(f"Skipping prediction because confidence {pred_conf:.2f} is below threshold {confidence:.2f}")
+                continue
+            fall_detected = True
+            fall_detected_time = time.time()
 
-                        # Save the current frame as an image
-                        frame_path = f"fall_frame_{int(time.time())}.jpg"
-                        cv2.imwrite(frame_path, frame)
+            output_dir = "output"
+            os.makedirs(output_dir, exist_ok=True)
+            frame_path = os.path.join(output_dir, f"fall_frame_{fall_detected_time}.jpg")
+            if not cv2.imwrite(frame_path, frame):
+                print(f"Failed to save frame at {frame_path}")
 
-                        # Send email with frame attachment
-                        send_email_alert(
-                            label="Fall Detected!",
-                            confidence_score=box.conf[0].item(),  # Use .item() for confidence score
-                            receiver_email="arbaaz14122002@gmail.com",
-                            frame_path=frame_path
-                        )
+            p_email = multiprocessing.Process(target=send_email_alert, kwargs={
+                "label": "Fall Detected!",
+                "confidence_score": pred_conf,
+                "receiver_email": recipient,
+                "frame_path": frame_path
+            })
+            p_email.start()
+            p_email.join()
+
+            # p_sms = multiprocessing.Process(target=send_sms_alert, args=(tonumber,))
+            # p_whatsapp = multiprocessing.Process(target=send_whatsapp_alert, args=(tonumber,))
+            # p_sms.start()
+            # p_whatsapp.start()
+            # p_sms.join()
+            # p_whatsapp.join()
+
+            ic(f"Fall detected with confidence: {pred_conf:.2f}")
+
+        elif class_name == "nofall":
+            fall_detected = False
+
     return fall_detected
 
-
-def clear_fall_detection():
-    global fall_detected, fall_detected_time
-    # Reset detection if no fall is detected for more than 5 seconds
-    if fall_detected_time and time.time() - fall_detected_time > 5:
-        with fall_detected_lock:
-            fall_detected = False
-            fall_detected_time = None
-
 def generate_frames():
-    global email_set
+    """
+    Read frames from the camera, run inference if alerts are enabled, and yield JPEG-encoded frames
+    for streaming via Flask.
+    """
+    global alert_set, confidence, cap
     while True:
         ret, frame = cap.read()
         if not ret:
+            print("No frame captured from camera.")
             break
-        if email_set:  # Process only if email is set
-            results = model(frame)
-            fall_detected = process_predictions(results, frame)
-            clear_fall_detection()  # Clear detection after 5 seconds
-            if hasattr(results, 'plot'):
-                frame = results.plot()  # Draws predictions on the frame
-        _, buffer = cv2.imencode('.jpg', frame)
-        frame = buffer.tobytes()
-        yield (b'--frame\r\nContent-Type: image/jpeg\r\n\r\n' + frame + b'\r\n')
+        
+        if alert_set:
+            results = model.predict(source=frame, conf=confidence)
+            process_predictions(results, frame)
+        success, buffer = cv2.imencode('.jpg', frame)
+        if not success:
+            continue
+        frame_bytes = buffer.tobytes()
+        yield (b'--frame\r\nContent-Type: image/jpeg\r\n\r\n' + frame_bytes + b'\r\n')
 
 @app.route('/')
 def index():
-    return render_template('index.html', fall_detected=fall_detected, email_set=email_set)
+    return render_template('index.html', fall_detected=fall_detected, alert_set=alert_set)
 
 @app.route('/video_feed')
 def video_feed():
     return Response(generate_frames(), mimetype='multipart/x-mixed-replace; boundary=frame')
 
-@app.route('/send_email', methods=['POST'])
-def send_email():
-    global email_set
+@app.route('/send_details', methods=['POST'])
+def send_alert():
+    """
+    Save the user provided email, phone, and confidence threshold and enable alert processing.
+    """
+    global alert_set, recipient, tonumber, confidence
     data = request.get_json()
-    recipient = data.get('email', None)
-    if recipient:
-        email_set = True  # Set email flag to true
-        return jsonify({"message": "Email saved successfully!"})
-    return jsonify({"message": "Invalid email address"}), 400
+    recipient = data.get('email')
+    tonumber = data.get('phone')
+    conf_value = data.get('conf')
+    
+    try:
+        confidence = float(conf_value)
+    except (TypeError, ValueError):
+        return jsonify({"message": "Invalid confidence value"}), 400
+
+    print("Received details:", data)
+    print("Recipient:", recipient, "Phone:", tonumber, "Confidence:", confidence)
+    
+    if recipient and tonumber and confidence:
+        alert_set = True
+        return jsonify({"message": "Email and Phone saved successfully!"})
+    return jsonify({"message": "Invalid details"}), 400
+
+@app.route('/fall_status')
+def updateFallStatus():
+    return jsonify({"status": fall_detected})
 
 if __name__ == "__main__":
+    cap = cv2.VideoCapture(0)
+    output_dir = "output"
+    if os.path.exists(output_dir):
+        shutil.rmtree(output_dir)
+    
     app.run(debug=True, host='0.0.0.0', port=5000)

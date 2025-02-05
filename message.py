@@ -1,4 +1,4 @@
-def send_sms_alert(to_number=None):
+def send_sms_alert(tonumber):
     try:
         from twilio.rest import Client
         from dotenv import load_dotenv
@@ -9,7 +9,7 @@ def send_sms_alert(to_number=None):
         auth_token = os.getenv('TWILIO_AUTH_TOKEN')
         client = Client(account_sid, auth_token)
         
-        to_number = to_number or os.getenv('RECEIVER_NUMBER')
+        to_number = tonumber
         from_number = os.getenv('SENDER_NUMBER')
         message_body = 'Fall Detected - Check Email for more information'
         
@@ -18,11 +18,11 @@ def send_sms_alert(to_number=None):
             body=message_body,
             to=to_number
         )
-        print(f"SMS alert sent (SID: {message.sid})")
+        print(f"SMS alert sent to {to_number}")
         return True
     except Exception as e:
         print(f"Error sending SMS: {e}")
         return False
 
-if __name__ == "__main__":
-    send_sms_alert()
+# if __name__ == "__main__":
+#     send_sms_alert()
